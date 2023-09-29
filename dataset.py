@@ -36,17 +36,17 @@ class FolderExplorer():
                     
 
             elif dataset=="cub":
-                with open(os.path.join(cfg.dataset_path, "train_test_split.txt")) as f:
-                    train_test_split = f.readlines()
-                    # filter train dataset with the image ids
-                    train_dataset_image_ids = [line.split()[0] for line in train_test_split if line.split()[1]=="1"]
-                    
-                with open(os.path.join(cfg.dataset_path, "images.txt")) as f:
-                    images = f.readlines()
-                    # filter the train dataset with the image ids and class ids
-                    train_dataset_images_ids_class = { line.split()[0]: line.split()[1] for line in images if line.split()[0] in train_dataset_image_ids}
+                train_test_file_path = os.path.join(dataset, "train_test_split.txt")
+                image_file_path = os.path.join(dataset, "images.txt")
+                class_file_path = os.path.join(dataset, "image_class_labels.txt")
 
-                dataset_dict["cub"] = train_dataset_image_ids
+                with open(train_test_file_path, "r") as train_test_file, open(image_file_path, "r") as image_file, open(class_file_path, "r") as class_file:
+                    for train_test_line, image_line, class_line in izip(train_test_file, image_file, class_file):
+                        train_test_line = train_test_line.strip().split(" ")
+                        image_line = image_line.strip().split(" ")
+                        class_line = class_line.strip().split(" ")
+                        if train_test_line[1] == "1":
+                            dataset_dict["cub"][class_line[1]] = os.path.join(cfg.dataset_path, "images", image_line[1])
 
             elif dataset=="cifarfs":
                 pass
