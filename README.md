@@ -1,7 +1,7 @@
-# PROCOM
+# PROCOM: Instance-wise features is all you need 🔥
 
 
-## Gantt Chart
+## Gantt Chart 🗓️
 
 
 ```mermaid
@@ -22,13 +22,13 @@ State of Art              :active,  des5, 2023-09-29, 50d
 
 ```
 
-## KIKIMETER
+## KIKIMETER 📈
     
-    ```mermaid
-    pie
-    title Number of line of codes per user
-    "Fred" : 100
-    "Jules" : 100
-    "Jonathan" : 10
-    "Clément" : 0
-    ```
+```mermaid
+pie
+title Number of line of codes per user
+"Fred" : 100
+"Jules" : 100
+"Jonathan" : 100
+"Clément" : 0
+```
