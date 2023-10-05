@@ -17,7 +17,11 @@ config = {
         
         "n_shots" : 1,
         "n_queries" : 15,
-    }
+    },
+    
+    "batch_size" : 8,
+    
+    
 }
 
 cfg = Box(config)
