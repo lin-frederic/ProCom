@@ -1,8 +1,7 @@
 name: Update Mermaid Chart in README
 on:
-  push:
-    branches:
-      - main  # You can specify your main branch name here
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
   update-readme:
@@ -13,11 +12,15 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Update Mermaid Chart
+        env: 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # This script counts lines per contributor and updates the Mermaid chart in README
           # Assumes that the Mermaid chart is enclosed between <!-- BEGIN MERMAID --> and <!-- END MERMAID -->
 
           # Get the current list of contributors
+          git config 
+          
           CONTRIBUTORS=$(git log --format='%aN' | sort -u)
 
           # Create a new Mermaid chart content
