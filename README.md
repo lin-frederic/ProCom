@@ -23,6 +23,8 @@ State of Art              :active,  des5, 2023-09-29, 50d
 ```
 
 ## KIKIMETER 📈
+
+<!-- BEGIN MERMAID -->
     
 ```mermaid
 pie
@@ -32,3 +34,5 @@ title Number of line of codes per user
 "Jonathan" : 100
 "Clément" : 0
 ```
+
+<!-- END MERMAID -->
