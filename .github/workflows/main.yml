@@ -1,0 +1,42 @@
+name: Update Mermaid Chart in README
+on:
+  push:
+    branches:
+      - main  # You can specify your main branch name here
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Update Mermaid Chart
+        run: |
+          # This script counts lines per contributor and updates the Mermaid chart in README
+          # Assumes that the Mermaid chart is enclosed between <!-- BEGIN MERMAID --> and <!-- END MERMAID -->
+
+          # Get the current list of contributors
+          CONTRIBUTORS=$(git log --format='%aN' | sort -u)
+
+          # Create a new Mermaid chart content
+          MERMAID_CONTENT="```mermaid
+          pie
+          title Number of line of codes per user"
+
+          # Loop through each contributor and count their lines
+          for contributor in $CONTRIBUTORS; do
+            lines=$(git log --author="$contributor" --oneline | wc -l)
+            MERMAID_CONTENT+="\n\"$contributor\" : $lines"
+          done
+
+          MERMAID_CONTENT+="\n\`\`\`"
+
+          # Replace the old Mermaid chart with the updated content
+          sed -i '/<!-- BEGIN MERMAID -->/,/<!-- END MERMAID -->/c\'"$MERMAID_CONTENT" README.md
+
+          git add README.md
+          git commit -m "Update Mermaid chart with line counts"
+          git push
+
