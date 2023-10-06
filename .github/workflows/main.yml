@@ -21,10 +21,7 @@ jobs:
           CONTRIBUTORS=$(git log --format='%aN' | sort -u)
 
           # Create a new Mermaid chart content
-          MERMAID_CONTENT="```mermaid
-          pie
-          title Number of line of codes per user"
-
+          MERMAID_CONTENT="\`\`\`mermaid \n pie \n title Number of line of codes per user"
           # Loop through each contributor and count their lines
           for contributor in $CONTRIBUTORS; do
             lines=$(git log --author="$contributor" --oneline | wc -l)
