@@ -6,6 +6,8 @@ from ncm import NCM
 from PIL import Image
 from torchvision import transforms as T
 from tqdm import tqdm
+from transform import PadAndResize
+import numpy as np
 
 
 def main(cfg):
@@ -17,24 +19,22 @@ def main(cfg):
                               n_query= cfg.sampler.n_queries,
                               n_ways = cfg.sampler.n_ways,
                               n_shot = cfg.sampler.n_shots,)
-    acc = 0
-    for i in tqdm(range(10)):
+    L_acc = []
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = get_model(size="s",use_v2=False)
+    model.to(device)
+    model.eval()
     
+    pbar = tqdm(range(cfg.n_runs), desc="Runs")
+    for episode_idx in pbar:
+        
+        # new sample for each run
         episode = sampler() #episode is (dataset, classe, support/query, image_path)
 
         imagenet_sample = episode["imagenet"]
 
-
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = get_model(size="s",use_v2=False)
-        model.to(device)
-        model.eval()
-
         transforms = T.Compose([
-            T.ToTensor(),
-            T.Resize(224, antialias=True), # generates warning otherwise
-            T.CenterCrop(224),
+            PadAndResize(224), # pad and resize to 224x224, to_tensor
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
@@ -96,17 +96,20 @@ def main(cfg):
             
             ncm = NCM()
             run_acc = ncm(support_features, query_features)
-            print("Accuracy: ", run_acc)
-            acc += run_acc
-    print("Average accuracy: ", acc/10)
-        
-        ## TO DO: pass the features to the NCM model
-        
-        # structure of support_features and query_features:
-        # {classe : {"features": tensor([n_shot, d]), "indices": tensor([n_shot])}, ...
-        #  classe : {"features": tensor([n_query, d]), "indices": tensor([n_query])}, ...}
-        # put indices because we need to know which feature corresponds to which image when including the masks
-        
+            L_acc.append(run_acc)
+            pbar.set_description(f"Run acc: {100*run_acc:.3f}, avg acc: {100*np.mean(L_acc):.3f}")
+            
+    avg_acc = np.mean(L_acc)
+    std_acc = np.std(L_acc)
+    print(f"\nacc over {cfg.n_runs} runs: {100*avg_acc:.3f} +- {100*std_acc:.3f}")
+    chance = 1 / cfg.sampler.n_ways["imagenet"]
+    print("kappa: ", (avg_acc - chance) / (1 - chance))
+    print(np.round(L_acc,3))
+    # structure of support_features and query_features:
+    # {classe : {"features": tensor([n_shot, d]), "indices": tensor([n_shot])}, ...
+    #  classe : {"features": tensor([n_query, d]), "indices": tensor([n_query])}, ...}
+    # put indices because we need to know which feature corresponds to which image when including the masks
+    
                 
 if __name__ == "__main__":
     
