@@ -1,15 +1,15 @@
 # PROCOM: Instance-wise features is all you need 🔥
 
 
-## Intraduciton 🚀
+## Introduciton 🚀
 
-The goal of this project is to be able to disambiguate the potentially misleading images in order to improve classiffication performances. Indeed, whenever the image start to contain several objects, the classification task becomes trikiers as the model has to choose between the different objects dedected. Lets imagine an image of a cat siting next to a dog, this image can be classified either with "dog" label or "cat" label, but the model doesn't know which part refered to a cat and which refered to a dog. 
+The goal of this project is to be able to disambiguate the potentially misleading images to improve classification performances. Indeed, whenever the image starts to contain several objects, the classification task becomes trickier as the model has to choose between the different objects detected. Let's imagine an image of a cat sitting next to a dog, this image can be classified either with "dog" label or "cat" label, but the model doesn't know which part referred to a cat and which referred to a dog. 
 
-In order to remove this incertity, the goal is to remove the other objects in a training image and only focus on the part which really contain the desire object of the class. To do so, we take a batch of images belonging to the same class and use a class agnostic object detector to identify all the possible objects within an image. Then, between all the object detected in the image, we have to find the object which best represent the class. To do so, we extract features from the image, like attention mask for intance. Then a similarity method is used between those features with all the others features extracted from the other images of the batch. 
+To remove this uncertainty, the goal is to remove the other objects in a training image and only focus on the part which contains the desired object of the class. To do so, we take a batch of images belonging to the same class and use a class-agnostic object detector to identify all the possible objects within an image. Then, between all the objects detected in the image, we have to find the object which best represents the class. To do so, we extract features from the image, like an attention mask for instance. Then a similarity method is used between those features with all the other features extracted from the other images of the batch. 
 
-The underlying hypothesis is that the batch is big enough to contain enough images without any ambiguities to correctly describe the class. The second hypothesis is that the similarity between the features of those easy images and the corresponding objet of the multi-object image is maximal, and is discrimitative enough compared the the similarity obtain with unrelated objects. 
+The underlying hypothesis is that the batch is big enough to contain enough images without any ambiguities to correctly describe the class. The second hypothesis is that the similarity between the features of those easy images and the corresponding object of the multi-object image is maximal, and is discriminative enough compared to the similarity obtained with unrelated objects. 
 
-At the end of the process we obtain a denoised dataset which precisely decribe a class. 
+At the end of the process, we obtain a denoised dataset which precisely describes a class. 
 
 ### Problematic: 
 
@@ -17,7 +17,7 @@ At the end of the process we obtain a denoised dataset which precisely decribe a
 
 ### Approach : 
 
-Two approaches have been proposed, the difference between those approach relise is the agnostic object detector. One use LOST wich directly detect objects of "interest" in a image. The other approach uses SAM wich ouputs mask of all the elements present in an images : is "segment everything". 
+Two approaches have been proposed, the difference between those approaches relies is the agnostic object detector. One uses LOST which directly detects objects of "interest" in an image. The other approach uses SAM which computes a mask of all the elements present in images: is "segment everything". 
 
 ## Schemes of the two options 
 
@@ -29,7 +29,7 @@ The second approach is using [SAM](https://arxiv.org/pdf/2304.02643.pdf)
 
 ## Instalation 🛠 : 
 
-To connect to the ssh bridge : 
+To connect to the SSH bridge : 
 ```
 
 PLEASE FILL 
@@ -37,7 +37,7 @@ PLEASE FILL
 ```
 
 If you don't have conda please install it [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
-To install the correct dependancies and set up the environment with conda 
+To install the correct dependencies and set up the environment with conda 
 
 ```
 conda env create -f environment.yml
@@ -50,7 +50,7 @@ conda actiavate ProCom
 
 
 ```mermaid
-gantt
+Gantt
 
 dateFormat  YYYY-MM-DD
 title PROCOM
