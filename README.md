@@ -1,7 +1,7 @@
 # PROCOM: Instance-wise features is all you need 🔥
 
 
-## Intraduciton 
+## Intraduciton 🚀
 
 The goal of this project is to be able to disambiguate the potentially misleading images in order to improve classiffication performances. Indeed, whenever the image start to contain several objects, the classification task becomes trikiers as the model has to choose between the different objects dedected. Lets imagine an image of a cat siting next to a dog, this image can be classified either with "dog" label or "cat" label, but the model doesn't know which part refered to a cat and which refered to a dog. 
 
@@ -25,6 +25,26 @@ The first approach is using [LOST](https://arxiv.org/pdf/2109.14279.pdf)
 <img src="images/LOST_pipeline.png"/>
 The second approach is using [SAM](https://arxiv.org/pdf/2304.02643.pdf)
 <img src="images/SAM_pipeline.png"/>
+
+
+## Instalation 🛠 : 
+
+To connect to the ssh bridge : 
+```
+
+PLEASE FILL 
+
+```
+
+If you don't have conda please install it [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
+To install the correct dependancies and set up the environment with conda 
+
+```
+conda env create -f environment.yml
+conda actiavate ProCom
+
+```
+
 
 ## Gantt Chart 🗓️
 
@@ -65,7 +85,6 @@ Risk evaluation          :        des13, 2023-10-12, 7d
 
 ```
 
-## Instalation 
 
 ## KIKIMETER 📈
 
