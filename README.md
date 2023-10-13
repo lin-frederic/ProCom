@@ -1,7 +1,7 @@
 # PROCOM: Instance-wise features is all you need 🔥
 
 
-## Introduciton 🚀
+## Introduction 🚀
 
 The goal of this project is to be able to disambiguate the potentially misleading images to improve classification performances. Indeed, whenever the image starts to contain several objects, the classification task becomes trickier as the model has to choose between the different objects detected. Let's imagine an image of a cat sitting next to a dog, this image can be classified either with "dog" label or "cat" label, but the model doesn't know which part referred to a cat and which referred to a dog. 
 
