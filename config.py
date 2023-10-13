@@ -13,22 +13,27 @@ config = {
         "pets" : "/nasbrain/datasets/oxford_pets",
     },
     "sampler" : {
-        "n_ways" : None,
+        "n_ways" : None, # if None, will be set to 5 for all datasets
         
         "n_shots" : 1,
         "n_queries" : 15,
     },
     
-    "batch_size" : 8,
+    "batch_size" : 16,
+    "n_runs" : 10,
     
     
 }
 
 cfg = Box(config)
 
-cfg.sampler.n_ways = {}
-for k,v in cfg.paths.items():
-    cfg.sampler.n_ways[k] = 5 
+if cfg.sampler.n_ways is None:
+    cfg.sampler.n_ways = {}
+    for k,v in cfg.paths.items():
+        cfg.sampler.n_ways[k] = 5
+elif isinstance(cfg.sampler.n_ways, int):
+    n_ways = cfg.sampler.n_ways
+    cfg.sampler.n_ways = {k:n_ways for k in cfg.paths.keys()}
 
 
 if __name__ == "__main__":
