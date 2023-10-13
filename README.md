@@ -50,7 +50,7 @@ conda actiavate ProCom
 
 
 ```mermaid
-Gantt
+gantt
 
 dateFormat  YYYY-MM-DD
 title PROCOM
