@@ -30,3 +30,13 @@ def get_model(size="s",use_v2=False):
         elif size == "l":
             model = torch.hub.load('facebookresearch/dino:main', 'dino_vitl16')
     return model
+
+# adapted from the official repos
+def forward_dino_v1(model, x):
+    x = model.prepare_tokens(x)
+    for blk in model.blocks:
+        x = blk(x)
+    x = model.norm(x)
+    return x
+
+# for dinov2, pass the is_training = True flag
