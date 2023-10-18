@@ -6,6 +6,7 @@ from model import get_model, forward_dino_v1
 from PIL import Image
 import torchvision.transforms as T
 import matplotlib.pyplot as plt
+import cv2
 import numpy as np
 
 class Lost(nn.Module):
@@ -33,7 +34,9 @@ class Lost(nn.Module):
             # remove cls token
             out = out[1:] # (H_d*W_d, D)
         # compute similarity matrix, degree matrix
+
         similarity_matrix = torch.matmul(out, out.T)              # (H_d*W_d, H_d*W_d)
+        
 
         degree_matrix = similarity_matrix>=0                      # (H_d*W_d, H_d*W_d)
         # select seed with lowest degree
@@ -42,16 +45,28 @@ class Lost(nn.Module):
 
         # expand seed set on similarity matrix
         degree_matrix[seed][seed] = 255
-        set_seed = degree_matrix[seed].reshape(H_d,W_d).detach().cpu().numpy()
-        
-        set_seed = np.uint8(set_seed)
-        
-        # TODO : limit cardinality of seed expansion set to k
-        # TODO : apply the box extraction algorithm
-        # reminder : the box extraction algorithm is 
-        # 1 if the sum of the dot product of the vector and all the vectors in the set is greater than 0
-        # 0 otherwise
-        
+        set_seed = degree_matrix[seed]                            # (H_d*W_d,)
+
+        # limit cardinality of seed expansion set to k
+        ordered_set_seed = torch.argsort(similarity_matrix[seed], descending=True) # returns indices
+        set_seed[ordered_set_seed[self.k:]] = 0                        # (H_d*W_d,)
+
+        # box extraction algorithm
+        for i in range(len(set_seed)):
+            if set_seed[i] == 0:
+                continue
+            else:
+                if torch.sum(similarity_matrix[i][set_seed==1]) > 0: 
+                # if the sum of the similarities between the current pixel and the pixels in the seed expansion set is > 0
+                    set_seed[i] = 1
+                else:
+                    set_seed[i] = 0
+
+        set_seed = set_seed.reshape(H_d, W_d).detach().cpu().numpy()
+        set_seed = np.uint8(set_seed*255)
+        # extract the largest connected component
+        set_seed = cv2.connectedComponents(set_seed)[1] # index 0 is background
+
         return set_seed
 
 
@@ -61,22 +76,25 @@ def main():
     model = get_model(size="s",use_v2=False) # loads a DINOv1 model, size s
     model.to(device)
     
-    lost = Lost(model)
+    lost = Lost(model, k=100)
     
     path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00000911.JPEG"
-    path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00004463.JPEG"
+    #path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00004463.JPEG"
+    path = "/nasbrain/datasets/imagenet/images/val/n01872401/ILSVRC2012_val_00008843.JPEG"
     img = Image.open(path)
     img.save("temp/img.png")
     
     w, h = img.size
-    up = 2
-    w, h = w*up, h*up
-    img = T.Resize((h//16*16,w//16*16), antialias=True)(img)
-    img = T.ToTensor()(img).unsqueeze(0).to(device)
+    up = 2**0.5 # upscaling factor
+    w, h = int(w*up), int(h*up)
+    img_t = T.Resize((h//16*16,w//16*16), antialias=True)(img)
+    img_t = T.ToTensor()(img_t).unsqueeze(0).to(device)
     
-    mask = lost(img)
+    mask = lost(img_t)
     
     # save mask
+
+    mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
     
     plt.imsave("temp/mask.png", mask)
     print("Done")
