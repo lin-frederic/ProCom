@@ -90,19 +90,18 @@ class KMeans(torch.nn.Module):
                         sumb += weight
                 centroids[centroid] = suma / sumb
 
-        # predict
-        for query_class, query_index, query_feature in query_output:
-            max_sim = float("-inf")
-            max_class = None
-            for support_class, support_index, support_feature in support_output:
-                sim = torch.dot(query_feature, support_feature)
-                if sim > max_sim:
-                    max_sim = sim
-                    max_class = support_class
-            if max_class == query_class:
+        # assign query features to centroids with least distance
+        for class_label, _ , class_feature in query_output:
+            min_distance = float("inf")
+            min_centroid = None
+            for centroid in centroids:
+                distance = torch.norm(class_feature - centroids[centroid])
+                if distance < min_distance:
+                    min_distance = distance
+                    min_centroid = centroid
+            if min_centroid == class_label:
                 acc += 1
-
-        acc = acc / len(query_output)
+        acc /= len(query_output)
         return acc
                         
 
