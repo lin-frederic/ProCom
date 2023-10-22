@@ -8,6 +8,10 @@ import torchvision.transforms as T
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
+import os
+from transform import PadAndResize
+from tqdm import tqdm
+import argparse
 
 class Lost(nn.Module):
     def __init__(self, model, k = 100):
@@ -70,34 +74,67 @@ class Lost(nn.Module):
         return set_seed
 
 
-def main():
+def main(n, is_grid):
+    
+    np.random.seed(0)
+    
+    res = 224
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False) # loads a DINOv1 model, size s
     model.to(device)
     
-    lost = Lost(model, k=100)
+    k = 400 if is_grid else 100 # 4 images so 400 patches
+    lost = Lost(model, k=k)
     
-    path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00000911.JPEG"
-    #path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00004463.JPEG"
-    path = "/nasbrain/datasets/imagenet/images/val/n01872401/ILSVRC2012_val_00008843.JPEG"
-    img = Image.open(path)
-    img.save("temp/img.png")
+    for index in tqdm(range(n)):
     
-    w, h = img.size
-    up = 2**0.5 # upscaling factor
-    w, h = int(w*up), int(h*up)
-    img_t = T.Resize((h//16*16,w//16*16), antialias=True)(img)
-    img_t = T.ToTensor()(img_t).unsqueeze(0).to(device)
-    
-    mask = lost(img_t)
-    
-    # save mask
+        #path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00000911.JPEG"
+        #path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00004463.JPEG"
+        root = "/nasbrain/datasets/imagenet/images/val/"
+        folder = np.random.choice(os.listdir(root))
+        path = os.path.join(root,folder)
+        
+        #path = "/nasbrain/datasets/imagenet/images/val/n01514668/"
+        #path = "/nasbrain/datasets/ADE20K/ADEChallengeData2016/images/validation/ADE_val_00001399.jpg"
+        
+        # concatenate 4 images (grid)
+        if is_grid:
+            blank = Image.new("RGB", (res*2,res*2))
+        
+            for i,img_path in enumerate(os.listdir(path)[:4]):
+                img = Image.open(os.path.join(path,img_path)).convert("RGB")
+                #img = T.CenterCrop(res)(img)
+                img = T.Resize((res,res), antialias=True)(img)
+                blank.paste(img, (res*(i%2), res*(i//2)))
+                
+            img = blank
+        else:
+            img = Image.open(os.path.join(path,np.random.choice(os.listdir(path)))).convert("RGB")
+            #img = T.CenterCrop(res)(img)
+            img = T.Resize((res,res), antialias=True)(img)
+            
+        img.save(f"temp/img_{index}.png")
+        
+        w, h = img.size
+        up = 2 # upscaling factor
+        w, h = int(w*up), int(h*up)
+        img_t = T.Resize((h//16*16,w//16*16), antialias=True)(img)
+        img_t = T.ToTensor()(img_t).unsqueeze(0).to(device)
+        
+        mask = lost(img_t)
+        
+        # save mask
 
-    mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-    
-    plt.imsave("temp/mask.png", mask)
+        mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        
+        plt.imsave(f"temp/mask_{index}.png", mask)
     print("Done")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n", type=int, default=5)
+    parser.add_argument("--grid", action=argparse.BooleanOptionalAction, default=True)
+    n = parser.parse_args().n
+    is_grid = parser.parse_args().grid
+    main(n, is_grid)
