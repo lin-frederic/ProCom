@@ -2,22 +2,27 @@
 
 import torch
 from torch import nn
-from model import get_model, forward_dino_v1
+from model import get_model, forward_dino_v1, show_attn, get_seed_from_attn
 from PIL import Image
 import torchvision.transforms as T
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 import os
-from transform import PadAndResize
+
 from tqdm import tqdm
 import argparse
 
+from tools import unravel_index # don't change to utils, there is a utils.py elsewhere
+
 class Lost(nn.Module):
-    def __init__(self, model, k = 100):
+    def __init__(self, model, alpha, k = 100):
         super().__init__()
         self.k = k # indicates the cardinality of the seed expansion set
         self.model = model # DINO model
+        self.alpha = alpha # alpha = 1 means that the seed is the pixel with the lowest degree
+                           # alpha = 0 means that the seed is the barycenter of the thresholded (otsu) attention map
+        assert 0 <= self.alpha <= 1, "alpha must be between 0 and 1"
         self.model.eval()
         
     def forward(self, img):
@@ -37,16 +42,38 @@ class Lost(nn.Module):
             out = forward_dino_v1(self.model, img).squeeze(0) 
             # remove cls token
             out = out[1:] # (H_d*W_d, D)
+            attn = show_attn(self.model, img, is_v2=False)
+        
+        # get attention seed
+        attn_seed = get_seed_from_attn(attn) # (2,)
+        
         # compute similarity matrix, degree matrix
-
         similarity_matrix = torch.matmul(out, out.T)              # (H_d*W_d, H_d*W_d)
         
 
         degree_matrix = similarity_matrix>=0                      # (H_d*W_d, H_d*W_d)
         # select seed with lowest degree
-        seed = torch.argmin(degree_matrix.sum(dim=0)) # or dim = 1, doesn't matter 
+        seed_degree = torch.argmin(degree_matrix.sum(dim=0)) # or dim = 1, doesn't matter 
         # (without loss of generality, we make a choice here)
 
+        
+        # the seed is a convex combination of the attention seed and the seed with lowest degree
+        
+        # unravel coordinates
+        seed_degree = unravel_index(seed_degree, (H_d,W_d)) # (2,)
+        # attn seed is already in (y,x) format
+
+        # compute seed
+        seed_degree = seed_degree.to("cpu") 
+        attn_seed = attn_seed.to("cpu") 
+        
+        seed = self.alpha*seed_degree + (1-self.alpha)*attn_seed # (2,)
+        seed = torch.round(seed).type(torch.int64) # (2,)
+
+        
+        # convert seed to index
+        seed = seed[0]*W_d + seed[1] # (1,)
+        
         # expand seed set on similarity matrix
         degree_matrix[seed][seed] = 255
         set_seed = degree_matrix[seed]                            # (H_d*W_d,)
@@ -76,7 +103,7 @@ class Lost(nn.Module):
 
 def main(n, is_grid):
     
-    np.random.seed(0)
+    np.random.seed(42)
     
     res = 224
     
@@ -85,7 +112,7 @@ def main(n, is_grid):
     model.to(device)
     
     k = 400 if is_grid else 100 # 4 images so 400 patches
-    lost = Lost(model, k=k)
+    lost = Lost(model, alpha=0.5, k=k)
     
     for index in tqdm(range(n)):
     
@@ -110,7 +137,8 @@ def main(n, is_grid):
                 
             img = blank
         else:
-            img = Image.open(os.path.join(path,np.random.choice(os.listdir(path)))).convert("RGB")
+            name = np.random.choice(os.listdir(path))
+            img = Image.open(os.path.join(path,name)).convert("RGB")
             #img = T.CenterCrop(res)(img)
             img = T.Resize((res,res), antialias=True)(img)
             

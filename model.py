@@ -86,7 +86,7 @@ def show_attn(model, x, is_v2=False):
         attn_map = attn_map[:, :, 0, 1:].reshape(B, attn_map.shape[1], h_featmap, w_featmap)
         return attn_map
         
-def get_seed_from_attn(attn_map, size):
+def get_seed_from_attn(attn_map):
     # attn_map is (B, nh, H, W)
     # size is (H, W) or S
     
@@ -97,18 +97,20 @@ def get_seed_from_attn(attn_map, size):
     array_map = (array_map - array_map.min()) / (array_map.max() - array_map.min())
     array_map = (255*array_map).astype(np.uint8)
     
-    _, array_map = cv2.threshold(array_map, 0, 255, cv2.THRESH_OTSU+cv2.THRESH_BINARY)
+    _, array_map = cv2.threshold(array_map, 200, 255, cv2.THRESH_OTSU+cv2.THRESH_BINARY)
     
     barycenter = center_of_mass(array_map)
     
-    return barycenter
+    barycenter = (int(barycenter[0]), int(barycenter[1]))
+    
+    return torch.Tensor(np.ravel(barycenter))
          
     
     
 def main():
     model = get_model(size="s",use_v2=False)
     
-    img = Image.open("temp/img_7.png")
+    img = Image.open("temp/img_8.png")
     
     img = T.Compose([
         T.Resize((224,224)),
