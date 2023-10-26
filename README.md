@@ -81,6 +81,7 @@ Team organisation        : done, des6, 2023-09-29, 10d
 Subject reformulation    : active, des11, 2023-09-29, 21d
 Project planning         : active, des12, 2023-09-29, 7d
 Risk evaluation          :        des13, 2023-10-12, 7d
+Project Review           : milestone, des31, 2023-11-21, 0d
 
 
 ```
