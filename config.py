@@ -15,7 +15,7 @@ config = {
     "sampler" : {
         "n_ways" : None, # if None, will be set to 5 for all datasets
         
-        "n_shots" : 1,
+        "n_shots" : 5,
         "n_queries" : 15,
     },
     
