@@ -23,12 +23,7 @@ args = parser.parse_args()
 
 
 class SAM():
-    def __init__(self, 
-            path:str, 
-            box_nms_thresh:float=0.5, 
-            min_mask_region_area:int=500, 
-            area_treshold:int=1, 
-            save:bool=False):
+    def __init__(self, path:str, box_nms_thresh:float=0.5, min_mask_region_area:int=500, area_treshold:int=1, save:bool=False):
         
         self.path = path
         print(self.path)
@@ -83,7 +78,7 @@ class SAM():
             image  = self.get_image(self.path)
             if image is None:
                 print(f"Could not load '{t}' as an image, skipping...")
-                
+                continue
             self.predictions[path] =  self.predict(image)
 
         for image_name in os.listdir(self.path) : 
