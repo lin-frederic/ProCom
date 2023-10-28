@@ -23,9 +23,15 @@ args = parser.parse_args()
 
 
 class SAM():
-    def __init__(self, path:str, box_nms_thresh=0.5:float, min_mask_region_area=500:int, area_treshold=1:int, save=False:bool):
+    def __init__(self, 
+            path:str, 
+            box_nms_thresh:float=0.5, 
+            min_mask_region_area:int=500, 
+            area_treshold:int=1, 
+            save:bool=False):
         
-        self.paths = paths
+        self.path = path
+        print(self.path)
         self.generator = SamAutomaticMaskGenerator(
                             model=sam,
                             box_nms_thresh=box_nms_thresh, # default 0.7 decresea => less duplicates 
@@ -34,7 +40,9 @@ class SAM():
         self.predictions = {}
         self.area_treshold = area_treshold
         self.save = save
-    
+        print(self.path)
+        print(self.save)
+
     def get_image(self, path)->np.ndarray:
         """ convert a path into an image """
         image = cv2.imread(t)        
@@ -77,8 +85,9 @@ class SAM():
             image  = self.get_image(self.path)
             if image is None:
                 print(f"Could not load '{t}' as an image, skipping...")
-                continue
+                
             self.predictions[path] =  self.predict(image)
+            print(self.prediction)
 
         for image_name in os.listdir(self.path) : 
             if '.jpg' in image_name or '.png' in image_name:  
@@ -98,14 +107,14 @@ class SAM():
 
 
 def main():
-
-    sam = SAM(
+    print("run")
+    """sam = SAM(
         args.path, 
         args.box_nms_thresh,
         args.min_mask_region_area, 
         args.area_treshold,
         args.save)
-    sam.run()
+    sam.run()"""
 
 
 if __name__ == '__main__':
