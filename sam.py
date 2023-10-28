@@ -40,8 +40,6 @@ class SAM():
         self.predictions = {}
         self.area_treshold = area_treshold
         self.save = save
-        print(self.path)
-        print(self.save)
 
     def get_image(self, path)->np.ndarray:
         """ convert a path into an image """
@@ -87,7 +85,6 @@ class SAM():
                 print(f"Could not load '{t}' as an image, skipping...")
                 
             self.predictions[path] =  self.predict(image)
-            print(self.prediction)
 
         for image_name in os.listdir(self.path) : 
             if '.jpg' in image_name or '.png' in image_name:  
@@ -107,17 +104,15 @@ class SAM():
 
 
 def main():
-    print("run")
-    """sam = SAM(
+    sam = SAM(
         args.path, 
         args.box_nms_thresh,
         args.min_mask_region_area, 
         args.area_treshold,
         args.save)
-    sam.run()"""
+    sam.run()
 
 
 if __name__ == '__main__':
     main()
 
-           
