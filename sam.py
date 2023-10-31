@@ -146,6 +146,14 @@ def main():
             min_mask_region_area=500, 
             area_treshold=1,
             save=False)
+
+    # to show the prediction 
+    path = list(sam.predictions.keys())[0]
+    mask  = sam.predictions[path][7]["segmentation"]
+    plt.figure(figsize=(10,10))
+    plt.imshow(mask)
+    plt.axis('off')
+    plt.show()
     """
     sam.run()
 
