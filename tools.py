@@ -1,5 +1,6 @@
 import torch
 from typing import Tuple
+import numpy as np
 
 def unravel_index(
     indices: torch.LongTensor,
@@ -27,3 +28,15 @@ def unravel_index(
         indices = indices // dim
 
     return coord.flip(-1)
+
+
+def iou(maskA, maskB):
+    # maskA and maskB are (H,W) numpy arrays
+    assert maskA.shape == maskB.shape
+    # convert to boolean
+    maskA = maskA>0
+    maskB = maskB>0
+    intersection = np.logical_and(maskA, maskB)
+    union = np.logical_or(maskA, maskB)
+    iou_score = np.sum(intersection) / np.sum(union)
+    return iou_score

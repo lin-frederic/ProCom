@@ -81,9 +81,12 @@ def deepSpectralMethods(image_paths,model,device,h=224,w=224):
     return image_dict
 
 class DSM(nn.Module):
-    def __init__(self, model_size="s", n_eigenvectors=5):
+    def __init__(self, model=None, n_eigenvectors=5):
         super().__init__()
-        self.model = get_model(size=model_size,use_v2=False).to("cuda")
+        if model is None:
+            self.model = get_model(model_size="s",use_v2=False)
+        else:
+            self.model = model
         self.n = n_eigenvectors
 
 

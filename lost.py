@@ -88,7 +88,7 @@ class Lost(nn.Module):
             if set_seed[i] == 0:
                 continue
             else:
-                if torch.sum(similarity_matrix[i][set_seed==1]) > 0: 
+                if torch.sum(similarity_matrix[i][set_seed>0]) > 0: 
                 # if the sum of the similarities between the current pixel and the pixels in the seed expansion set is > 0
                     set_seed[i] = similarity_matrix[i][set_seed==1].sum() # set the pixel to the sum of the similarities
                 else:

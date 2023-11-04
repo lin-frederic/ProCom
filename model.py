@@ -91,13 +91,12 @@ def get_seed_from_attn(attn_map):
     # size is (H, W) or S
     
     array_map = torch.min(attn_map, dim=1)[0].squeeze().detach().cpu().numpy()
-    
 
     
     array_map = (array_map - array_map.min()) / (array_map.max() - array_map.min())
     array_map = (255*array_map).astype(np.uint8)
     
-    _, array_map = cv2.threshold(array_map, 200, 255, cv2.THRESH_OTSU+cv2.THRESH_BINARY)
+    _, array_map = cv2.threshold(array_map, int(0.75*255), 255, cv2.THRESH_OTSU+cv2.THRESH_BINARY)
     
     barycenter = center_of_mass(array_map)
     
