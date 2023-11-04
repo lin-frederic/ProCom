@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 import os
-
+from scipy.signal import convolve2d as convolve
 from tqdm import tqdm
 import argparse
 
@@ -52,6 +52,7 @@ class Lost(nn.Module):
         
 
         degree_matrix = similarity_matrix>=0                      # (H_d*W_d, H_d*W_d)
+        degree_matrix = degree_matrix.type(torch.int64)           # (H_d*W_d, H_d*W_d)
         # select seed with lowest degree
         seed_degree = torch.argmin(degree_matrix.sum(dim=0)) # or dim = 1, doesn't matter 
         # (without loss of generality, we make a choice here)
@@ -89,21 +90,22 @@ class Lost(nn.Module):
             else:
                 if torch.sum(similarity_matrix[i][set_seed==1]) > 0: 
                 # if the sum of the similarities between the current pixel and the pixels in the seed expansion set is > 0
-                    set_seed[i] = 1
+                    set_seed[i] = similarity_matrix[i][set_seed==1].sum() # set the pixel to the sum of the similarities
                 else:
                     set_seed[i] = 0
 
+        # normalize
+        set_seed = (set_seed - set_seed.min()) / (set_seed.max() - set_seed.min())
         set_seed = set_seed.reshape(H_d, W_d).detach().cpu().numpy()
         set_seed = np.uint8(set_seed*255)
-        # extract the largest connected component
-        set_seed = cv2.connectedComponents(set_seed)[1] # index 0 is background
 
         return set_seed
 
 
-def main(n, is_grid):
+def main(n, is_grid, seed):
     
-    np.random.seed(42)
+    if seed > 0:
+        np.random.seed(seed)
     
     res = 224
     
@@ -112,7 +114,9 @@ def main(n, is_grid):
     model.to(device)
     
     k = 400 if is_grid else 100 # 4 images so 400 patches
-    lost = Lost(model, alpha=0.5, k=k)
+    up = 2 # upscaling factor
+    k = k*up**2 # logical to keep the same ratio patches/seed expansion set
+    lost = Lost(model, alpha=0., k=k)
     
     for index in tqdm(range(n)):
     
@@ -142,27 +146,69 @@ def main(n, is_grid):
             #img = T.CenterCrop(res)(img)
             img = T.Resize((res,res), antialias=True)(img)
             
-        img.save(f"temp/img_{index}.png")
+        #img.save(f"temp/img_{index}.png")
+        plt.figure(figsize=(10,5))
+        
         
         w, h = img.size
-        up = 2 # upscaling factor
+        
         w, h = int(w*up), int(h*up)
-        img_t = T.Resize((h//16*16,w//16*16), antialias=True)(img)
-        img_t = T.ToTensor()(img_t).unsqueeze(0).to(device)
+        img = T.Resize((h//16*16,w//16*16), antialias=True)(img)
+        img_t = T.ToTensor()(img).unsqueeze(0).to(device)
         
-        mask = lost(img_t)
-        
-        # save mask
+        out = lost(img_t)
 
-        mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        out = cv2.resize(out.astype(np.uint8), (w,h), interpolation=cv2.INTER_NEAREST)
+
+        # get the largest connected component amongst the non-zero pixels
+
+        components = cv2.connectedComponentsWithStats(out, connectivity=4)
+
+        num_labels, labels, stats, centroids = components
+
+        # identify the background label
+        background_indexes = np.where(out == 0)
+        background_label = np.median(labels[background_indexes])
+
+        # sort the labels by area
+        sorted_labels = np.argsort(stats[:, cv2.CC_STAT_AREA])[::-1] 
+        # get the largest connected component
+        largest_component_label = sorted_labels[0] if sorted_labels[0] != background_label else sorted_labels[1]
+
+        # get the mask of the largest connected component
+        mask = np.where(labels == largest_component_label, 1, 0).astype(np.uint8)
+
+        plt.subplot(1,3,1)
+        plt.imshow(img)
+        plt.axis("off")
+        plt.title("Image")
+
+        plt.subplot(1,3,2)
+        plt.imshow(out)
+        plt.axis("off")
+        plt.title("Lost output")
+
+        plt.subplot(1,3,3)
+        plt.imshow(mask)
+        plt.axis("off")
+        plt.title("Mask : largest connected component")        
         
-        plt.imsave(f"temp/mask_{index}.png", mask)
+
+
+        plt.savefig(f"temp/lost_{index}.png")
+
+        plt.close()
+        
+        
+        
     print("Done")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n", type=int, default=5)
-    parser.add_argument("--grid", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--n", "-n", type=int, default=5, help="Number of images to process")
+    parser.add_argument("--grid", action=argparse.BooleanOptionalAction, default=False, help="Whether to process a grid of images")
+    parser.add_argument("--seed", "-s", type=int, default=-1, help="Random seed, set to -1 for no seed")
     n = parser.parse_args().n
     is_grid = parser.parse_args().grid
-    main(n, is_grid)
+    seed = parser.parse_args().seed
+    main(n, is_grid, seed)

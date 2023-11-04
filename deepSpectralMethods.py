@@ -73,11 +73,65 @@ def deepSpectralMethods(image_paths,model,device,h=224,w=224):
         eigenvalues, eigenvectors = eigenvalues[1:], eigenvectors[:,1:] 
         # the eigenvectors basis might have opposite orientation, so we need to flip the eigenvectors
         for i in range(eigenvectors.shape[1]):
-            if eigenvectors[:,i].median() > 0 : # intuition : if the median is positive, then attention is more on the background so we flip the eigenvector
+            # flip if the median is more than the center of the value range
+            if torch.median(eigenvectors[:,i]) > (eigenvectors[:,i].max()+eigenvectors[:,i].min())/2:
                 eigenvectors[:,i] = -eigenvectors[:,i]
         image_dict[image_path] = {"eigenvalues": eigenvalues,
                                 "eigenvectors": eigenvectors}
     return image_dict
+
+class DSM(nn.Module):
+    def __init__(self, model_size="s", n_eigenvectors=5):
+        super().__init__()
+        self.model = get_model(size=model_size,use_v2=False).to("cuda")
+        self.n = n_eigenvectors
+
+
+    def forward(self, img):
+        w, h = img.shape[2], img.shape[3]
+        w_map, h_map = img.shape[2]//16, img.shape[3]//16
+        with torch.inference_mode():
+            attentions = forward_dino_v1(self.model,img).squeeze(0)
+        attentions = attentions[1:] #remove cls token, shape is (h_featmap*w_featmap, D)
+        attentions = attentions.permute(1,0) # (D,h_featmap*w_featmap)
+        attentions = attentions.reshape(attentions.shape[0],h_map,w_map).unsqueeze(0) # (1,D,h_featmap,w_featmap)
+        attentions = nn.functional.interpolate(attentions,size=(2*h_map,2*w_map),mode="bilinear")
+        attentions = attentions.squeeze(0).reshape(attentions.shape[1],-1)
+        attentions = attentions.permute(1,0) # (2*h_featmap*2*w_featmap,D)
+        feature_similarity = (attentions @ attentions.T)/(torch.norm(attentions,dim=1).unsqueeze(1) @ torch.norm(attentions,dim=1).unsqueeze(0))
+        
+        # keep only the positive values
+        feature_similarity = feature_similarity * (feature_similarity>0)
+        D = torch.diag(torch.sum(feature_similarity,dim=1))
+        L = D - feature_similarity # L is (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
+        eigenvalues, eigenvectors = torch.linalg.eigh(L)
+        # do not keep the first eigenvalue and eigenvector because they are constant
+        eigenvalues, eigenvectors = eigenvalues[1:], eigenvectors[:,1:] 
+        # the eigenvectors basis might have opposite orientation, so we need to flip the eigenvectors
+        for i in range(eigenvectors.shape[1]):
+            # flip if the median is more than the center of the value range
+            if torch.median(eigenvectors[:,i]) > (eigenvectors[:,i].max()+eigenvectors[:,i].min())/2:
+                eigenvectors[:,i] = -eigenvectors[:,i]
+        
+        eigenvectors = eigenvectors[:,:self.n]
+        eigenvectors = eigenvectors.reshape(2*h_map,2*w_map,self.n) # (2*h_map,2*w_map,4)
+        eigenvectors = eigenvectors.permute(2,0,1) # (self.n,2*h_map,2*w_map)
+        eigenvectors = eigenvectors.detach().cpu().numpy()
+
+        temp = []
+        for vector in eigenvectors:
+            vector = ((vector-vector.min())/(vector.max()-vector.min()))*255
+         
+            temp.append(cv2.resize(vector.astype(np.uint8), 
+                                            (w,h), 
+                                            interpolation=cv2.INTER_NEAREST))
+            
+
+
+        eigenvectors = np.stack(temp,axis=0)
+
+        return eigenvectors
+
 
 if __name__ == "__main__":
     folder_explorer = FolderExplorer(cfg.paths)
