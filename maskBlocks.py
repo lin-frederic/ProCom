@@ -24,26 +24,33 @@ from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 
 from deepSpectralMethods import DSM
 
+from tools import iou
+
 class Identity(nn.Module):
     def __init__(self):
         super().__init__()
         
     def forward(self, img):
         w, h = img.size
-        return [{"segmentation": np.ones((w,h),dtype=np.uint8), "area": w*h}] # whole image
+        mask = np.ones((w,h),dtype=np.uint8)
+        mask[0,0] = 0 # remove one pixel to have a clean map
+        return [{"segmentation": mask, "area": w*h}] # whole image
 
 class Lost(nn.Module):
-    def __init__(self,alpha, k):
+    def __init__(self,alpha, k, model = None):
         super().__init__()
         self.res = 224
         self.up = 2
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = get_model(size="s",use_v2=False) # loads a DINOv1 model, size s
-        model.to(self.device)
+        if model is None:
+            model = get_model(size="s",use_v2=False) # loads a DINOv1 model, size s
+            model.to(self.device)
         self.lost = Lost_module(model=model,alpha=alpha,k=k*self.up**2)
 
     def clean(self, out, w, h):
         out = cv2.resize(out.astype(np.uint8), (w,h), interpolation=cv2.INTER_NEAREST)
+        # threshold the output to get a binary mask
+        _, out = cv2.threshold(out, 128, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
 
         # get the largest connected component amongst the non-zero pixels
 
@@ -79,12 +86,18 @@ class Lost(nn.Module):
 
         mask = self.clean(out, w, h)
 
-        return [{"segmentation": mask,                          "area": np.sum(mask)},
-                {"segmentation": np.ones((w,h),dtype=np.uint8), "area": w*h}]
+        #full = np.ones((w,h),dtype=np.uint8)
+        #full[0,0] = 0 # remove one pixel to have a clean map
+
+        return [{"segmentation": mask, "area": np.sum(mask)},]
+                #{"segmentation": full, "area": w*h}]
 
 class SAM(nn.Module):
     def __init__(self, size="b"):
         super().__init__()
+        if size == "s":
+            size = "b" # b is the smallest size
+            print("Warning : SAM size s does not exist, using SAM size b instead")
         sizes = {
             "b" : "sam_vit_b_01ec64.pth",
             "l" : "sam_vit_l_0b3195.pth",
@@ -95,24 +108,30 @@ class SAM(nn.Module):
         print("SAM loaded")
         sam.to("cuda")
 
-        self.AMG = SamAutomaticMaskGenerator(sam)
+        self.AMG = SamAutomaticMaskGenerator(sam, 
+                                             points_per_side=16,
+                                             stability_score_thresh=0.82)
         
     def forward(self, img):
         if isinstance(img, Image.Image):
             img = np.array(img)
         masks = self.AMG.generate(img)
-        return [{"segmentation": mask["segmentation"], 
+        masks = [{"segmentation": mask["segmentation"], 
                  "area": mask["area"]} for mask in masks]
-        
+        masks = sorted(masks, key=lambda x: x["area"], reverse=True) # sort by area (largest first)
+        return masks
+
 class DeepSpectralMethods(nn.Module):
-    def __init__(self, model_size="s", n_eigenvectors=5):
+    def __init__(self, model = None, n_eigenvectors=5):
         super().__init__()
         self. transforms = T.Compose([
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], 
                          std=[0.229, 0.224, 0.225])
         ])
-        self.dsm = DSM(model_size=model_size, n_eigenvectors=n_eigenvectors)
+        if model is None:
+            model = get_model(size="s",use_v2=False)
+        self.dsm = DSM(model=model, n_eigenvectors=n_eigenvectors)
     def forward(self, img):
         
         img = self.transforms(img).unsqueeze(0).to("cuda")
@@ -122,65 +141,129 @@ class DeepSpectralMethods(nn.Module):
 
         for i in range(len(eigenvectors)):
             mask = eigenvectors[i]
+            mask = cv2.resize(mask, (224,224), interpolation=cv2.INTER_NEAREST)
             _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            mask = np.where(mask > 0, 1, 0).astype(np.uint8)
 
             masks.append({"segmentation": mask, "area": np.sum(mask)})
 
         masks = sorted(masks, key=lambda x: x["area"], reverse=True) # sort by area
         return masks
 
-        
+def postprocess_masks(masks):
+    # invert mask to have an area less than 0.5 of the image
+    for mask in masks:
+        if mask["area"] > 0.5 * mask["segmentation"].shape[0] * mask["segmentation"].shape[1]:
+            mask["segmentation"] = 1 - mask["segmentation"]
+            mask["area"] = np.sum(mask["segmentation"])
+
+
 
 import os
 import matplotlib.pyplot as plt
-def main():
-    np.random.seed(1)
+import uuid
+import argparse
+from tqdm import tqdm
+import time
+def main(n, seed):
+    start = time.time()
+    if seed > 0:
+        np.random.seed(seed)
 
-    root = "/nasbrain/datasets/imagenet/images/val/"
-    folder = np.random.choice(os.listdir(root))
-    path = os.path.join(root,folder)
-
-    img = Image.open(os.path.join(path,np.random.choice(os.listdir(path)))).convert("RGB")
-    img = T.Resize((224,224), antialias=True)(img)
-
+    # instantiate the blocks
     identity = Identity()
-    lost = Lost(alpha=0., k=100)
-    sam = SAM(size="b")
-    spectral = DeepSpectralMethods(model_size="s", n_eigenvectors=5)
+    sam = SAM(size="s")
 
-    mask_id = identity(img)
-    mask_lost = lost(img)
-    mask_sam = sam(img) 
-    mask_spectral = spectral(img)
+    dino_model = get_model(size="s",use_v2=False).to("cuda") # shared model for lost and dsm
 
+    lost_deg_seed = Lost(alpha=1., k=100, model=dino_model)
+    lost_atn_seed = Lost(alpha=0., k=100, model=dino_model)
+    
+    spectral = DeepSpectralMethods(model=dino_model, n_eigenvectors=5)
 
-    masks = [mask_id, mask_lost, mask_sam, mask_spectral]
-    titles = ["Identity", "Lost", "SAM", "DSM"]
+    setup_time = time.time()
 
-    n = 5
-    fig, axes = plt.subplots(len(masks)+1, n, figsize=(10,10))
-    axes[0,0].imshow(img)
-    axes[0,0].set_title("Original image")
-    axes[0,0].axis("off")
+    for ind in tqdm(range(n)):
+        
+        root = "/nasbrain/datasets/imagenet/images/val/"
+        folder = np.random.choice(os.listdir(root))
+        path = os.path.join(root,folder)
 
-    for i, (mask, title) in enumerate(zip(masks, titles)):
-        for j in range(len(mask))[:n]:
-            axes[i+1,j].imshow(mask[j]["segmentation"])
-            axes[i+1,j].set_title(f"{title} - area : {mask[j]['area']}")
+        img = Image.open(os.path.join(path,np.random.choice(os.listdir(path)))).convert("RGB")
+        img = T.Resize((224,224), antialias=True)(img)
+
+        
+
+        mask_id = identity(img)
+        mask_lost = lost_deg_seed(img) + lost_atn_seed(img) 
+        approx_area = np.mean([mask["area"] for mask in mask_lost])
+
+        # filter out masks that are too small
+        mask_sam = sam(img)
+        mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.2*approx_area]
+        if len(mask_sam_f) > 2:
+            mask_sam = mask_sam_f
+
+        mask_spectral = spectral(img)
+        
+        # best masks are the ones that are the most similar to the lost masks
+        L= np.array([0 for _ in range(len(mask_sam))])
+        for i,mask in enumerate(mask_sam):
+            L[i] = max([iou(mask["segmentation"], mask_["segmentation"]) for mask_ in mask_lost+mask_spectral[:2]])
+
+        mask_sam = [mask_sam[i] for i in np.argsort(L)[::-1]] # default argsort is ascending
+        
+        # best masks are the ones that are the most similar to the lost masks and the first sam mask
+        L = [
+            iou(mask_lost[0]["segmentation"], mask_spectral[i]["segmentation"]) \
+            + iou(mask_lost[1]["segmentation"], mask_spectral[i]["segmentation"]) \
+            for i in range(len(mask_spectral))
+        ]
+
+        mask_spectral = [mask_spectral[i] for i in np.argsort(L)[::-1]]
             
-    for i in range(len(masks)+1):
-        for j in range(n):
-            axes[i,j].axis("off")
+        masks = [mask_id, mask_lost, mask_sam, mask_spectral]
+        titles = ["Identity", "Lost", "SAM", "DSM"]
+
+        
+        postprocess_masks(mask_spectral)
+
+        n_ = 5
+        fig, axes = plt.subplots(len(masks)+1, n_, figsize=(10,10))
+        axes[0,0].imshow(img)
+        axes[0,0].set_title("Original image")
+        axes[0,0].axis("off")
+
+        for i, (mask, title) in enumerate(zip(masks, titles)):
+            for j in range(min(n_,len(mask))):
+                axes[i+1,j].imshow(mask[j]["segmentation"])
+                axes[i+1,j].set_title(f"{title} - area : {mask[j]['area']}")
+                
+        for i in range(len(masks)+1):
+            for j in range(n_):
+                axes[i,j].axis("off")
 
 
-    plt.tight_layout()
+        plt.tight_layout()
 
-    plt.savefig("temp/img.png")
+        name = str(uuid.uuid4())
+        plt.savefig(f"temp/img_{name}.png")
+        plt.close()
+
+    end = time.time()
 
     print("done")
+    print(f"setup time : {setup_time-start:.4g} s")
+    print(f"total time : {end-start:.4g} s")
+    print(f"time / img : {(end-setup_time)/n:.4g} s")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--n", type=int, default=5)
+    parser.add_argument("-s", "--seed", type=int, default=-1)
+    n = parser.parse_args().n
+    seed = parser.parse_args().seed
+    main(n, seed)
 
 
 
