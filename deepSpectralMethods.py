@@ -101,13 +101,15 @@ def deepSpectralMethods(image_paths,model,device,h=224,w=224,lambda_color=10):
     return image_dict
 
 class DSM(nn.Module):
-    def __init__(self, model=None, n_eigenvectors=5):
+    def __init__(self, model=None, n_eigenvectors=5,lambda_color=10,device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         super().__init__()
         if model is None:
-            self.model = get_model(model_size="s",use_v2=False)
+            self.model = get_model(size="s",use_v2=False)
         else:
             self.model = model
         self.n = n_eigenvectors
+        self.lambda_color = lambda_color
+        self.device = device
 
 
     def forward(self, img):
@@ -125,8 +127,18 @@ class DSM(nn.Module):
         
         # keep only the positive values
         feature_similarity = feature_similarity * (feature_similarity>0)
-        D = torch.diag(torch.sum(feature_similarity,dim=1))
-        L = D - feature_similarity # L is (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
+        #downscale the image to calculate the color affinity matrix, should be (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
+        img = nn.functional.interpolate(img,size=(2*h_map,2*w_map),mode="bilinear")
+        img = img.squeeze(0).permute(1,2,0).detach().cpu().numpy()
+        img = ((img-img.min())/(img.max()-img.min()))*255
+        img = img.astype(np.uint8) 
+        color_affinity = knn_affinity(img) # is a numpy array
+        color_affinity = torch.tensor(color_affinity,dtype=torch.float32)
+        color_affinity = color_affinity.to(self.device)
+        similarity = feature_similarity + self.lambda_color*color_affinity
+        D = torch.diag(torch.sum(similarity,dim=1))
+        # do not normalize the laplacian matrix because the eigenvalues are very small
+        L = D - similarity # L is (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
         eigenvalues, eigenvectors = torch.linalg.eigh(L)
         # do not keep the first eigenvalue and eigenvector because they are constant
         eigenvalues, eigenvectors = eigenvalues[1:], eigenvectors[:,1:] 
@@ -137,23 +149,26 @@ class DSM(nn.Module):
                 eigenvectors[:,i] = -eigenvectors[:,i]
         
         eigenvectors = eigenvectors[:,:self.n]
-        eigenvectors = eigenvectors.reshape(2*h_map,2*w_map,self.n) # (2*h_map,2*w_map,4)
+        eigenvectors = eigenvectors.reshape(2*h_map,2*w_map,self.n) # (2*h_map,2*w_map,self.n)
         eigenvectors = eigenvectors.permute(2,0,1) # (self.n,2*h_map,2*w_map)
         eigenvectors = eigenvectors.detach().cpu().numpy()
 
         temp = []
         for vector in eigenvectors:
-            vector = ((vector-vector.min())/(vector.max()-vector.min()))*255
+            vector = ((vector-vector.min())/(vector.max()-vector.min()))*255 # normalize between 0 and 255 to have a grayscale image
          
             temp.append(cv2.resize(vector.astype(np.uint8), 
                                             (w,h), 
-                                            interpolation=cv2.INTER_NEAREST))
+                                            interpolation=cv2.INTER_NEAREST)) # resize to original image size
             
 
 
-        eigenvectors = np.stack(temp,axis=0)
+        eigenvectors = np.stack(temp,axis=0) # (self.n,h,w)
 
         return eigenvectors
+     
+        
+        
 
 
 if __name__ == "__main__":
@@ -163,54 +178,35 @@ if __name__ == "__main__":
                             n_query= cfg.sampler.n_queries,
                             n_ways = cfg.sampler.n_ways,
                             n_shot = cfg.sampler.n_shots)
+    dsm = DSM() # default parameters are model=None, n_eigenvectors=5
+    dsm.eval()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dsm.to(device)
+    # dataset
     episode = sampler()
     imagenet_sample = episode["imagenet"]
-    class_0 = list(imagenet_sample.keys())[0]
-    model = get_model()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    model.eval()
-    image_paths = imagenet_sample[class_0]["support"]
-    lambda_color = 10
-    image_dict = deepSpectralMethods(image_paths,model,device,lambda_color=lambda_color)
-    for image_path in tqdm(image_paths): # for each image, plot the first 4 eigenvectors side by side and save the plot
+    # support set
+    support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
+    for image_path in tqdm(support_images):
         image = Image.open(image_path).convert("RGB")
         image = image.resize((224,224))
-        h,w = image.size
-        h_map, w_map = h//16, w//16
-        eigenvalues = image_dict[image_path]["eigenvalues"]
-        eigenvectors = image_dict[image_path]["eigenvectors"] # (2*h_map*2*w_map,2*h_map*2*w_map)
-        x,y,w,h,fiedler = objectLocalization(eigenvectors,h,w)
-        eigenvalues = eigenvalues[:4]
-        eigenvectors = eigenvectors[:,:4] # (2*h_map*2*w_map,4)
-        eigenvectors = eigenvectors.reshape(2*h_map,2*w_map,4) # (2*h_map,2*w_map,4)
-        eigenvectors = eigenvectors.permute(2,0,1) # (4,2*h_map,2*w_map)
-        eigenvectors = eigenvectors.detach().cpu().numpy()
-        eigenvectors = (eigenvectors-eigenvectors.min())/(eigenvectors.max()-eigenvectors.min())
-        eigenvectors = (eigenvectors*255).astype(np.uint8)
-        plt.figure(figsize=(20,10))
-        plt.subplot(1,5,1)
+        image_tensor = transforms.ToTensor()(image)
+        image_tensor = transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                                    std=[0.229, 0.224, 0.225])(image_tensor)
+        image_tensor = image_tensor.unsqueeze(0)
+        image_tensor = image_tensor.to(device)
+        eigenvectors = dsm(image_tensor)
+        # save the plot of the eigenvectors side by side for each image and save it
+        fig, axs = plt.subplots(1, eigenvectors.shape[0], figsize=(15,15))
+        for i,ax in enumerate(axs):
+            ax.imshow(eigenvectors[i],cmap="viridis")
+            ax.axis("off")
+        plt.savefig(f"temp/eigenvectors_{image_path.split('/')[-1]}")
+        plt.close()
+        #also save the plot of the original image
         plt.imshow(image)
-        plt.title("original image")
-        for i in range(4):
-            plt.subplot(1,5,i+2)
-            plt.imshow(eigenvectors[i])
-            plt.title("eigenvector "+str(i+1))
-        image_name = image_path.split("/")[-1].split(".")[0]
-        plt.savefig("temp/"+image_name+"_"+str(lambda_color)+".png")
-        plt.figure(figsize=(20,20)) # plot the object localization against binary segmentation
-        plt.subplot(1,2,1)
-        plt.imshow(image)
-        plt.title("object localization")
         plt.axis("off")
-        from matplotlib.patches import Rectangle
-        plt.gca().add_patch(Rectangle((x,y),w,h,linewidth=1,edgecolor='r',facecolor='none'))
-        plt.subplot(1,2,2)
-        plt.imshow(fiedler)
-        plt.title("binary segmentation")
-        plt.axis("off")
-        plt.savefig("temp/"+image_name+"_"+str(lambda_color)+"_localization.png")
-    print("done")
-
-        
+        plt.savefig(f"temp/original_{image_path.split('/')[-1]}")
+        plt.close()
+    
         
