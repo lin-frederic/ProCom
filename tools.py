@@ -40,3 +40,38 @@ def iou(maskA, maskB):
     union = np.logical_or(maskA, maskB)
     iou_score = np.sum(intersection) / np.sum(union)
     return iou_score
+
+# 2 segmentation losses that could be used as a replacement for IoU
+
+def focal_loss(inputs : np.ndarray,targets : np.ndarray, alpha : float = 1., gamma : float = 2.):
+    # inputs and targets are numpy arrays of the same shape
+    
+    inputs = inputs.flatten()
+    targets = targets.flatten()
+    
+    inputs = np.clip(inputs,1e-6,1-1e-6)
+    targets = np.clip(targets,1e-6,1-1e-6)
+    
+    BCE = - (targets * np.log(inputs) + (1-targets) * np.log(1-inputs))
+    
+    BCE_EXP = np.exp(BCE)
+    
+    loss = np.mean(alpha * (1-BCE_EXP)**gamma * BCE)
+    
+    return loss
+
+def dice_loss(inputs : np.ndarray,targets : np.ndarray, smooth : float = 1.):
+    # inputs and targets are numpy arrays of the same shape
+    
+    inputs = inputs.flatten()
+    targets = targets.flatten()
+
+    
+    intersection = np.sum(inputs * targets)
+    union = np.sum(inputs) + np.sum(targets)
+    
+    loss = (2. * intersection + smooth) / (union + smooth)
+    
+    return 1 - loss
+    
+    
