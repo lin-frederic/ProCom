@@ -54,7 +54,7 @@ def knn_affinity(image, n_neighbors=[20, 10], distance_weights=[2.0, 0.1]): # ma
     W = torch.tensor(W.todense(),dtype=torch.float32)
     return W
 
-def deepSpectralMethods(image_paths,model,device,h=224,w=224,lambda_color=10):
+def deepSpectralMethods(image_paths,model,device,h=224,w=224,lambda_color=1):
     # input image_paths is a list of image paths
     # input model is dinov1, should be in eval mode on device
     # output is the eigenvalues and eigenvectors of the normalized laplacian matrix
@@ -133,7 +133,7 @@ class DSM(nn.Module):
         img = ((img-img.min())/(img.max()-img.min()))*255
         img = img.astype(np.uint8) 
         color_affinity = knn_affinity(img) # is a numpy array
-        color_affinity = torch.tensor(color_affinity,dtype=torch.float32)
+        #color_affinity = torch.tensor(color_affinity,dtype=torch.float32)
         color_affinity = color_affinity.to(self.device)
         similarity = feature_similarity + self.lambda_color*color_affinity
         D = torch.diag(torch.sum(similarity,dim=1))

@@ -126,6 +126,28 @@ class DeepSpectralMethods(nn.Module):
         if model is None:
             model = get_model(size="s",use_v2=False)
         self.dsm = DSM(model=model, n_eigenvectors=n_eigenvectors)
+    def clean(self, out, w, h):
+        out = cv2.resize(out.astype(np.uint8), (w,h), interpolation=cv2.INTER_NEAREST)
+        # threshold the output to get a binary mask
+        _, out = cv2.threshold(out, 128, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+
+        # get the largest connected component amongst the non-zero pixels
+
+        components = cv2.connectedComponentsWithStats(out, connectivity=4)
+        num_labels, labels, stats, centroids = components
+        # identify the background label
+        background_indexes = np.where(out == 0)
+        background_label = np.median(labels[background_indexes])
+
+        # sort the labels by area
+        sorted_labels = np.argsort(stats[:, cv2.CC_STAT_AREA])[::-1] 
+        # get the largest connected component
+        largest_component_label = sorted_labels[0] if sorted_labels[0] != background_label else sorted_labels[1]
+
+        # get the mask of the largest connected component
+        mask = np.where(labels == largest_component_label, 1, 0).astype(np.uint8)
+
+        return mask
     def forward(self, img):
         
         img = self.transforms(img).unsqueeze(0).to("cuda")
@@ -142,6 +164,8 @@ class DeepSpectralMethods(nn.Module):
             masks.append({"segmentation": mask, "area": np.sum(mask)})
 
         masks = sorted(masks, key=lambda x: x["area"], reverse=True) # sort by area
+        for mask in masks:
+            mask["segmentation"] = self.clean(mask["segmentation"], 224, 224)
         return masks
 
 def postprocess_masks(masks, threshold=0.5):
@@ -151,7 +175,14 @@ def postprocess_masks(masks, threshold=0.5):
             mask["segmentation"] = 1 - mask["segmentation"]
             mask["area"] = np.sum(mask["segmentation"])
 
-
+def postprocess_mask(mask, reference, loss):
+    mask = mask > 0
+    reference = reference > 0
+    inv = 1 - mask
+    if loss(inv, reference) < loss(mask, reference):
+        return inv
+    else:
+        return mask
 
 import os
 import matplotlib.pyplot as plt
@@ -237,6 +268,12 @@ def main(n, seed):
 
         # postprocess the masks to have an area less than 0.5 of the image
         postprocess_masks(mask_spectral, threshold=0.5)
+
+        mask_spectral = [postprocess_mask(
+            mask["segmentation"], 
+            mask_lost[0]["segmentation"], 
+            loss
+        ) for mask in mask_spectral] 
 
         n_ = 5
         fig, axes = plt.subplots(len(masks)+1, n_, figsize=(10,10))
