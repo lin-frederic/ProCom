@@ -54,52 +54,6 @@ def knn_affinity(image, n_neighbors=[20, 10], distance_weights=[2.0, 0.1]): # ma
     W = torch.tensor(W.todense(),dtype=torch.float32)
     return W
 
-def deepSpectralMethods(image_paths,model,device,h=224,w=224,lambda_color=1):
-    # input image_paths is a list of image paths
-    # input model is dinov1, should be in eval mode on device
-    # output is the eigenvalues and eigenvectors of the normalized laplacian matrix
-    image_dict = {}
-    for image_path in image_paths:
-        image = Image.open(image_path).convert("RGB")
-        image = image.resize((h,w))
-        image_tensor = transforms.ToTensor()(image)
-        image_tensor = transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                                     std=[0.229, 0.224, 0.225])(image_tensor)
-        image_tensor = image_tensor.unsqueeze(0)
-        image_tensor = image_tensor.to(device)
-        h_map, w_map = image_tensor.shape[2]//16, image_tensor.shape[3]//16
-        with torch.inference_mode():
-            attentions = forward_dino_v1(model,image_tensor).squeeze(0)
-        attentions = attentions[1:] #remove cls token, shape is (h_featmap*w_featmap, D)
-        attentions = attentions.permute(1,0) # (D,h_featmap*w_featmap)
-        attentions = attentions.reshape(attentions.shape[0],h_map,w_map).unsqueeze(0) # (1,D,h_featmap,w_featmap)
-        attentions = nn.functional.interpolate(attentions,size=(2*h_map,2*w_map),mode="bilinear")
-        attentions = attentions.squeeze(0).reshape(attentions.shape[1],-1)
-        attentions = attentions.permute(1,0) # (2*h_featmap*2*w_featmap,D)
-        feature_similarity = (attentions @ attentions.T)/(torch.norm(attentions,dim=1).unsqueeze(1) @ torch.norm(attentions,dim=1).unsqueeze(0))
-        
-        # keep only the positive values
-        feature_similarity = feature_similarity * (feature_similarity>0)
-        #downscale the image to calculate the color affinity matrix, should be (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
-        image = image.resize((2*h_map,2*w_map))
-        affinity_matrix = knn_affinity(image)
-        affinity_matrix = affinity_matrix.to(device)
-        similarity = feature_similarity + lambda_color*affinity_matrix
-        D = torch.diag(torch.sum(similarity,dim=1))
-        L = D - similarity # L is (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
-        #L = D**(-1/2) @ L @ D**(-1/2) # normalized laplacian matrix, often D have very great values so the normalized laplacian matrix is not well conditioned as eigenvalues are very small
-        eigenvalues, eigenvectors = torch.linalg.eigh(L)
-        # do not keep the first eigenvalue and eigenvector because they are constant
-        eigenvalues, eigenvectors = eigenvalues[1:], eigenvectors[:,1:] 
-        # the eigenvectors basis might have opposite orientation, so we need to flip the eigenvectors
-        for i in range(eigenvectors.shape[1]):
-            # flip if the median is more than the center of the value range
-            if torch.median(eigenvectors[:,i]) > (eigenvectors[:,i].max()+eigenvectors[:,i].min())/2:
-                eigenvectors[:,i] = -eigenvectors[:,i]
-        image_dict[image_path] = {"eigenvalues": eigenvalues,
-                                "eigenvectors": eigenvectors}
-    return image_dict
-
 class DSM(nn.Module):
     def __init__(self, model=None, n_eigenvectors=5,lambda_color=10,device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         super().__init__()
@@ -208,5 +162,4 @@ if __name__ == "__main__":
         plt.axis("off")
         plt.savefig(f"temp/original_{image_path.split('/')[-1]}")
         plt.close()
-    
         

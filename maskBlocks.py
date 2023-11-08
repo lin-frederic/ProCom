@@ -159,7 +159,7 @@ class DeepSpectralMethods(nn.Module):
             mask = eigenvectors[i]
             mask = cv2.resize(mask, (224,224), interpolation=cv2.INTER_NEAREST)
             _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-            mask = np.where(mask > 0, 1, 0).astype(np.uint8)
+            mask = np.where(mask > mask.mean(), 1, 0).astype(np.uint8)
 
             masks.append({"segmentation": mask, "area": np.sum(mask)})
 
