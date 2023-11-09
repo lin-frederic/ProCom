@@ -61,7 +61,9 @@ Dataset collect/process   :active,  des2, 2023-10-05, 21d
 Model instalation         :done,    des3, 2023-10-05, 7d
 Baseline implementation   :  des14, 2023-10-19, 7d
 Pipeline design     :  des15, 2023-10-19, 7d
-Blabla implementation :  des16, 2023-10-26, 7d
+Models Block implem :  des16, 2023-10-26, 7d
+Mask Embedding implem :  des16, 2023-11-02, 15d
+Classification Block implem :  des16, 2023-11-11, 10d
 
 section Research
 State of Art collect      :active,  des4, 2023-09-29, 50d
@@ -69,11 +71,11 @@ Benchmark collect         :active,  des5, 2023-09-29, 50d
 
 
 section Writing 
-Abstract : des17, 2023-10-26, 7d
-Introduction : des18, 2023-10-12, 30d
-Related Work : des19, 2023-10-12, 30d
-Experiement - Dataset : des20, 2023-10-26, 7d
-Experiement - Model : des21, 2023-11-02, 7d
+Abstract : des17, 2023-11-06, 7d
+Introduction : des18, 2023-11-16, 30d
+Related Work : des19, 2023-11-16, 30d
+Experiement - Dataset : des20, 2023-11-26, 7d
+Experiement - Model : des21, 2023-11-26, 7d
 
 
 section School Project Review
