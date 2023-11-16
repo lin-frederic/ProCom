@@ -1,5 +1,4 @@
-import embedding
-import maskBlocks as mb
+import embedding as emb
 from torchvision import transforms as T
 import cv2
 from PIL import Image
@@ -10,95 +9,89 @@ import json
 
 class mask2embedings():
     def __init__(self, 
-                 model:str, 
-                 path:str, # todo le changer en list de path 
+                 masks:Dict,  # {path_to_image : [(mask 1 of the image, crop_bbox correponding to the mask), (mask 2, bbox) ...]}  
                  path_to_save:str,  
                  embedding:List[str], 
-                 n_imgs:int=None,): 
-        self.model_name = model 
-        self.path = path
-        self.path_to_save = path_to_save
-        self.emdeddings = embedding # list of embedding names desire 
-
-        np.random.seed(1234)
-        # list of all images in the file
-        if n_imgs is not None : 
-            img_paths = np.random.choices(os.listdir(self.paths), k=n_imgs)
-        else : # all images 
-            img_paths = os.listdir(self.path)
-
-        # list of all the images 
-        self.images = []
-        self.image_names = []
-        for path_image in img_paths:
-            self.image_names.append ()# TODO get image name at the end of img_path 
-            self.images.append(T.Resize((224,224), antialias=True)(Image.open(path_image).convert("RGB")))
+                 ): 
         
-        if self.model_name.lower()=="identity":
-            self.model = mb.Identity()
+        self.emdeddings = embedding # list of embedding names desire 
+        self.masks = masks # {img_path : [masks list with the best mask of the image, with their relative corp link to each mask]}
 
-        if self.model_name.lower()=="sam":
-            self.model = mb.SAM(size="s")
+        # list of all images we have the path
+        self.img_paths = list(self.masks.keys())
+        self.images = {} # list of all the images 
 
-        if self.model_name.lower()=="lost":
-            dino_model = mb.get_model(size="s",use_v2=False).to("cuda") # shared model for lost and dsm
-            lost_deg_seed = mb.Lost(alpha=1., k=100, model=dino_model)
-            lost_atn_seed = mb.Lost(alpha=0., k=100, model=dino_model)
-            
+        # compute of all the images 
+        for path_image in self.img_paths:
+            self.images[path_image] = (T.Resize((224,224), antialias=True)(Image.open(path_image).convert("RGB")))              
 
-        if self.model_name.lower() in ["deepspectral", "dsp", "deep spectral"] :
-            dino_model = mb.get_model(size="s",use_v2=False).to("cuda") # shared model for lost and dsm
-            self.model = mb.DeepSpectralMethods(model=dino_model, n_eigenvectors=5)
+        # embedding of the images 
+        self.emdedded_images = {}  # { path_img = {emdedding_name : [embdedingS]}} 
 
-        else : 
-            print("Need a valid model name either :identity, lost , sam of dsp ")
-            self.model = None
-    
+        # path to save the output 
+        self.path_to_save = path_to_save
 
-    def generate_masks (self)->Dict[str,list]:
-        """ return { "img name : [masks] }"""
-        assert (self.model is not None), "The model shouldn't be none"
-        img2masks = {}
-        for index , img in self.images_names :
-            img2masks[img] = {'masks' : self.model(self.images[index])} 
-        return img2masks 
-
-    def generate_embedding(self, img2masks):
+    def generate_embedding(self)->Dict:
         """ Generate the embdeings given masks , {img_name : {"embedding_mame" : emdedded image}}"""
-        for index , img in self.images_names: 
-            # TODO
-            # get the mask 
-            image = self.image_names[img]
-            masks = img2masks[img]
+        for path in self.img_paths: 
+            image = self.images[path] 
+            masks = self.masks[path]  # list of mask related to the image
+
             # get the embedding 
+            embedname2embedimg = {} # {"embedding_mame" : emdedded image}
+
             for embedding in self.emdeddings: 
+            # compute the choosen embedding (in the emb list) for each masks 
+
+                # list with all the embedded images for each mask for the choosen embedding 
+                embedded_masks = [] 
                 if embedding =="gaussian noise":
-                    embedding= ""
+                    for mask in range(len(masks)): 
+                        emb_img = emb.gaussian_noise(image, mask[0]) # return an image
+                        if len(mask)>1:
+                            embedded_masks.append(emb.crop(emb_img, mask[1])) # mask[1] is the bbox
+                        else : # no crop 
+                            embedded_masks.append(emb_img)
                 if embedding =="gaussian_blur":
-                    embedding= ""
+                    for mask in masks: 
+                        emb_img = emb.gaussian_blur(image, mask[0])
+                        if len(mask)>1:
+                            embedded_masks.append(emb.crop(emb_img, mask[1]))
+                        else : 
+                            embedded_masks.append(emb_img)
                 if embedding =="remove_bg":
-                    embedding= ""
+                    for mask in masks: 
+                        emb_img = emb.remove_bg (image , mask[0])
+                        if len(mask)>1:
+                            embedded_masks.append(emb.crop(emb_img, mask[1]))
+                        else : 
+                            embedded_masks.append(emb_img)
                 if embedding =="highlighted_contour":
-                    embedding= ""
+                    for mask in masks: 
+                        emb_img = emb.highlighted_contour(image, mask[0])
+                        if len(mask)>1:
+                            embedded_masks.append(emb.crop(emb_img, mask[1]))
+                        else :  
+                            embedded_masks.append(emb_img)
+
                 if embedding =="attention": 
-                    embedding= ""
-            # create the mask to embedding 
-            print("TODO")
-        return None
+                    for mask in masks: 
+                        embedded_masks.append()
+
+                # add the embedded image to the names of the embeding in the global dict
+                embedname2embedimg[embedding] = embedded_masks
+
+            # add all the embedding to the image 
+            self.emdedded_images[path] = embedname2embedimg 
+
+        return self.emdedded_images
+
 
     def save_masks(self):
-        """ the mask are save in a json file with their embedded image"""
-        img2masks = self.generate_masks ()
+        """ the embeddings are save in a json file with their embedded image"""
+        img2masks = self.generate_embedding ()
 
         with open(self.path_to_save , "w" ) as json_file: 
             json.dump(img2masks, json_file)
         print(f"Mask and images generated with {self.model} saved at {self.path_to_save}")
 
-    def save_maskEmbedded(self, img2masks=None):
-        """ embed the mask ans save them """
-        if img2masks is None: 
-            img2masks = self.generate_masks ()
-        img2emb = self.generate_embedding(self, img2masks)
-        with open(self.path_to_save , "w" ) as json_file: 
-            json.dump(img2emb, json_file)
-        print(f"the embedded mask images generated with {self.model} saved at {self.path_to_save}")
