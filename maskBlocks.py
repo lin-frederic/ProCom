@@ -5,6 +5,7 @@ These blocks extract the masks from the image and return it.
 - Lost : the masks are the seed expansion set + the whole image
 - SAM : the masks are the masks from SAM Automatic Mask Generator
 - DeepSpectralMethod : the masks are the thresholded eigenvectors of the Laplacian matrix
+- Combined : the masks are the masks from SAM AMG + the masks from DeepSpectralMethod, optimized to be similar to the masks from Lost
 
 
 Args: PIL image of shape (H,W,3) on CPU, we take H = W = 224
@@ -25,6 +26,7 @@ from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 from deepSpectralMethods import DSM
 
 from tools import iou, focal_loss, dice_loss
+from typing import Union
 
 class Identity(nn.Module):
     def __init__(self):
@@ -116,7 +118,7 @@ class SAM(nn.Module):
         return masks
 
 class DeepSpectralMethods(nn.Module):
-    def __init__(self, model = None, n_eigenvectors=5):
+    def __init__(self, model = None, n_eigenvectors=5, lambda_color=10):
         super().__init__()
         self. transforms = T.Compose([
             T.ToTensor(),
@@ -125,7 +127,7 @@ class DeepSpectralMethods(nn.Module):
         ])
         if model is None:
             model = get_model(size="s",use_v2=False)
-        self.dsm = DSM(model=model, n_eigenvectors=n_eigenvectors)
+        self.dsm = DSM(model=model, n_eigenvectors=n_eigenvectors, lambda_color=lambda_color)
     def clean(self, out, w, h):
         out = cv2.resize(out.astype(np.uint8), (w,h), interpolation=cv2.INTER_NEAREST)
         # threshold the output to get a binary mask
@@ -167,22 +169,93 @@ class DeepSpectralMethods(nn.Module):
         for mask in masks:
             mask["segmentation"] = self.clean(mask["segmentation"], 224, 224)
         return masks
+    
+def combine_masks(masks_sam, masks_spectral, masks_lost, norm : Union[float, bool], postprocess=True):
+    """
+    masks_sam : list of masks from SAM
+    masks_spectral : list of masks from DeepSpectralMethods
+    masks_lost : list of masks from Lost
+    loss : loss function
+    norm : if True, normalize the losses (focal and dice) across the masks (before summing them)
+    if float, then it is the coefficient of the focal loss i.e.
+    loss = lambda x,y : dice_loss(x,y) + norm * focal_loss(x,y)
+    postprocess : postprocess to have 
+    
+    returns : list of masks from SAM + DeepSpectralMethods +  lost, optimized to be similar to the masks from Lost (minimize the loss)
 
-def postprocess_masks(masks, threshold=0.5):
-    # invert mask to have an area less than 0.5 of the image
-    for mask in masks:
-        if mask["area"] > threshold * mask["segmentation"].shape[0] * mask["segmentation"].shape[1]:
-            mask["segmentation"] = 1 - mask["segmentation"]
-            mask["area"] = np.sum(mask["segmentation"])
+    --> intuitively, the best masks are the ones that are the most similar to the lost masks
+    """
+    def postprocess_area(masks, threshold=0.5):
+    # invert mask to have an area less than 0.5 (or threshold) of the image
+    # in place operation
+        for mask in masks:
+            if mask["area"] > threshold * mask["segmentation"].shape[0] * mask["segmentation"].shape[1]:
+                mask["segmentation"] = 1 - mask["segmentation"]
+                mask["area"] = np.sum(mask["segmentation"])
 
-def postprocess_mask(mask, reference, loss):
-    mask = mask > 0
-    reference = reference > 0
-    inv = 1 - mask
-    if loss(inv, reference) < loss(mask, reference):
-        return inv
-    else:
+    def postprocess_loss(mask, reference, loss):
+        # invert the mask if it minimizes the loss
+        # in place operation
+        mask = mask > 0
+        reference = reference > 0
+        inv = 1 - mask
+        if loss(inv, reference) < loss(mask, reference):
+            mask = inv
         return mask
+
+    
+    # postprocess the masks
+    if postprocess is True:
+
+        postprocess_area(masks_lost, threshold=0.5)
+
+        reference = np.prod([mask["segmentation"] for mask in masks_lost], axis=0) # intersection of the lost masks
+        reference = reference > 0
+
+        """for mask in masks_sam:
+            mask["segmentation"] = postprocess_loss(mask["segmentation"], reference, dice_loss)
+        for mask in masks_spectral:
+            mask["segmentation"] = postprocess_loss(mask["segmentation"], reference, dice_loss)"""
+
+        thr = 0.7
+        postprocess_area(masks_sam, threshold=thr)
+        postprocess_area(masks_spectral, threshold=thr)
+
+    # compute the losses
+    # 2 losses : focal and dice
+    losses_sam = np.zeros((len(masks_sam), len(masks_lost), 2)) 
+    losses_spectral = np.zeros((len(masks_spectral), len(masks_lost), 2))
+
+    for i in range(len(masks_lost)):
+        for j in range(len(masks_sam)):
+            losses_sam[j,i,0] = focal_loss(masks_sam[j]["segmentation"], masks_lost[i]["segmentation"])
+            losses_sam[j,i,1] = dice_loss(masks_sam[j]["segmentation"], masks_lost[i]["segmentation"])
+        for j in range(len(masks_spectral)):
+            losses_spectral[j,i,0] = focal_loss(masks_spectral[j]["segmentation"], masks_lost[i]["segmentation"])
+            losses_spectral[j,i,1] = dice_loss(masks_spectral[j]["segmentation"], masks_lost[i]["segmentation"])
+
+    if norm is True:
+        losses_sam[::,0] /= np.sum(losses_sam[:,:,0]) # focal / sam 
+        losses_sam[::,1] /= np.sum(losses_sam[:,:,1]) # dice / sam
+
+        losses_spectral[::,0] /= np.sum(losses_spectral[:,:,0]) # focal / spectral
+        losses_spectral[::,1] /= np.sum(losses_spectral[:,:,1]) # dice / spectral
+    
+    else :
+        losses_sam[::,0] *= norm # focal / sam
+        losses_spectral[::,0] *= norm # focal / spectral
+    
+    losses_sam = np.sum(losses_sam, axis=2) # sum the losses, shape (len(masks_sam), len(masks_lost))
+    losses_spectral = np.sum(losses_spectral, axis=2) # sum the losses, shape (len(masks_spectral), len(masks_lost))
+
+    losses_spectral = np.sum(losses_spectral, axis=1) # sum the losses, shape (len(masks_spectral),)
+    losses_sam = np.sum(losses_sam, axis=1) # sum the losses, shape (len(masks_sam),)
+
+    # sort the masks by loss (argsort returns the indices)
+    masks_sam = [masks_sam[i] for i in np.argsort(losses_sam)]
+    masks_spectral = [masks_spectral[i] for i in np.argsort(losses_spectral)]
+
+    return masks_sam, masks_spectral, masks_lost 
 
 import os
 import matplotlib.pyplot as plt
@@ -201,10 +274,10 @@ def main(n, seed):
 
     dino_model = get_model(size="s",use_v2=False).to("cuda") # shared model for lost and dsm
 
-    lost_deg_seed = Lost(alpha=1., k=100, model=dino_model)
-    lost_atn_seed = Lost(alpha=0., k=100, model=dino_model)
+    lost_deg_seed = Lost(alpha=0.9, k=100, model=dino_model)
+    lost_atn_seed = Lost(alpha=0.1, k=100, model=dino_model)
     
-    spectral = DeepSpectralMethods(model=dino_model, n_eigenvectors=5)
+    spectral = DeepSpectralMethods(model=dino_model, n_eigenvectors=15, lambda_color=5)
 
     ######################################################################
 
@@ -219,7 +292,7 @@ def main(n, seed):
         img = Image.open(os.path.join(path,np.random.choice(os.listdir(path)))).convert("RGB")
         img = T.Resize((224,224), antialias=True)(img)
 
-        mask_id = identity(img)
+        masks_id = identity(img)
         mask_lost = lost_deg_seed(img) + lost_atn_seed(img) # concatenate the output of the two lost blocks
         approx_area = np.mean([mask["area"] for mask in mask_lost]) # average area of the lost masks
 
@@ -232,48 +305,11 @@ def main(n, seed):
 
         mask_spectral = spectral(img)
         
-        # intuitively, the best masks are the ones that are the most similar to the lost masks
-        
-        # loss = lambda x,y : -iou(x,y)
-        # loss = focal_loss
-        # loss = dice_loss
-        coeff = 1e-13 # black magic
-        loss = lambda x,y : dice_loss(x,y) + coeff * focal_loss(x,y)
-        # similar loss as the one used in the trainin of SAM
-        
-        L = [
-            loss(mask_lost[0]["segmentation"], mask_sam[i]["segmentation"]) \
-            + loss(mask_lost[1]["segmentation"], mask_sam[i]["segmentation"]) \
-            for i in range(len(mask_sam))
-        ]
-        for i in range(len(mask_sam)):
-            mask_sam[i]["loss"] = L[i]
-            
-        mask_sam = [mask_sam[i] for i in np.argsort(L)] # minimize the loss
-        
-    
-        # best masks are the ones that are the most similar to the lost masks
-        L = [
-            loss(mask_lost[0]["segmentation"], mask_spectral[i]["segmentation"]) \
-            + loss(mask_lost[1]["segmentation"], mask_spectral[i]["segmentation"]) \
-            for i in range(len(mask_spectral))
-        ]
+        masks_sam, masks_spectral, masks_lost = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
 
-        for i in range(len(mask_spectral)):
-            mask_spectral[i]["loss"] = L[i]
-        mask_spectral = [mask_spectral[i] for i in np.argsort(L)]
             
-        masks = [mask_id, mask_lost, mask_sam, mask_spectral]
+        masks = [masks_id, masks_lost, masks_sam, masks_spectral]
         titles = ["Id", "Lost", "SAM", "DSM"]
-
-        # postprocess the masks to have an area less than 0.5 of the image
-        postprocess_masks(mask_spectral, threshold=0.5)
-
-        mask_spectral = [postprocess_mask(
-            mask["segmentation"], 
-            mask_lost[0]["segmentation"], 
-            loss
-        ) for mask in mask_spectral] 
 
         n_ = 5
         fig, axes = plt.subplots(len(masks)+1, n_, figsize=(10,10))

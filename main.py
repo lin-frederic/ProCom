@@ -34,7 +34,9 @@ def main(cfg):
         imagenet_sample = episode["imagenet"]
 
         transforms = T.Compose([
-            PadAndResize(224), # pad and resize to 224x224, to_tensor
+            #PadAndResize(224), # pad and resize to 224x224, to_tensor
+            T.Resize((224,224)),
+            T.ToTensor(),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
