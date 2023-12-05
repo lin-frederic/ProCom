@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from tools import preprocess_Features
+from classif.classif_tools import preprocess_Features
 
 class NCM(torch.nn.Module):
     def __init__(self):
