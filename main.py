@@ -2,7 +2,7 @@ import torch
 from dataset import EpisodicSampler, FolderExplorer
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
-from ncm import NCM
+from classif.ncm import NCM
 from PIL import Image
 from torchvision import transforms as T
 from tqdm import tqdm
