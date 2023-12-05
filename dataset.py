@@ -152,16 +152,17 @@ class DatasetBuilder():
     query_images: list of PIL images
     query_labels: list of labels
     """
-    def __init__(self) -> None:
+    def __init__(self, cfg) -> None:
+        self.cfg = cfg
         pass
 
     def __call__(self, seed_classes = None, seed_images = None) -> Any:
-        folder_explorer = FolderExplorer(cfg.paths)
+        folder_explorer = FolderExplorer(self.cfg.paths)
         paths = folder_explorer()
         sampler = EpisodicSampler(paths = paths,
-                                n_query= cfg.sampler.n_queries,
-                                n_ways = cfg.sampler.n_ways,
-                                n_shot = cfg.sampler.n_shots)
+                                n_query= self.cfg.sampler.n_queries,
+                                n_ways = self.cfg.sampler.n_ways,
+                                n_shot = self.cfg.sampler.n_shots)
         episode = sampler(seed_classes = seed_classes, seed_images = seed_images)
         # episode is (dataset, classe, support/query, image_path)
         dataset_dict = {}
@@ -207,10 +208,10 @@ def main_bis():
 
     episode = episodic_sampler()
 
-    for dataset_name, list_classes in episode.items():
-        print(dataset_name)
-        print(list_classes)
-        print()
+    imagenet_sample = episode["imagenet"]
+
+    print(len(imagenet_sample))
+
 
 
 def main_ter():
@@ -227,4 +228,4 @@ def main_ter():
         print("query labels:  ", len(query_labels))
 
 if __name__== "__main__":
-    main_ter()
+    main_bis()
