@@ -3,7 +3,7 @@ import random as rd
 from typing import Any
 from config import cfg
 import json
-
+from PIL import Image
 
 class FolderExplorer():
     def __init__(self, dataset_paths) -> None:
@@ -40,7 +40,7 @@ class FolderExplorer():
                             class_name= line.split('/')[0]
                             if class_name not in test_dataset_images_ids_class:
                                 test_dataset_images_ids_class[class_name] = []
-                            test_dataset_images_ids_class[class_name].append(line)
+                            test_dataset_images_ids_class[class_name].append(os.path.join(cfg.paths["cub"], "images", line))
 
                 dataset_dict["cub"] = test_dataset_images_ids_class # {class: [image_id, ...]}
 
@@ -53,19 +53,20 @@ class FolderExplorer():
                     for class_name in os.listdir(os.path.join(cfg.paths["cifarfs"], meta)):
                         class_names.append(os.path.join(meta, class_name))
                 for class_name in class_names:
-                    dataset_dict["cifarfs"][class_name] = os.listdir(os.path.join(cfg.paths["cifarfs"], class_name))  
+                    image_names = os.listdir(os.path.join(cfg.paths["cifarfs"], class_name))
+                    dataset_dict["cifarfs"][class_name] = [os.path.join(cfg.paths["cifarfs"], class_name, image_name) for image_name in image_names]
             elif dataset=="fungi":
                 dataset_dict["fungi"] = {}
                 for class_name in os.listdir(os.path.join(cfg.paths["fungi"], "images")):
-                    dataset_dict["fungi"][class_name] = os.listdir(os.path.join(cfg.paths["fungi"], "images", class_name))
-                
-            elif dataset=="mscoco": #j'ai pas les droits
-                pass
+                    image_names = os.listdir(os.path.join(cfg.paths["fungi"], "images", class_name))
+                    dataset_dict["fungi"][class_name] = [os.path.join(cfg.paths["fungi"], "images", class_name, image_name) for image_name in image_names]
+
             elif dataset=="caltech":
                 dataset_dict["caltech"] = {}
                 for class_name in os.listdir(os.path.join(cfg.paths["caltech"],"101_ObjectCategories")):
                     dataset_dict["caltech"][class_name] = os.listdir(os.path.join(cfg.paths["caltech"],"101_ObjectCategories", class_name))
                     dataset_dict["caltech"][class_name] = [img for img in dataset_dict["caltech"][class_name] if img.lower().endswith(".jpg") or img.lower().endswith(".png") or img.lower().endswith(".jpeg")]
+                    dataset_dict["caltech"][class_name] = [os.path.join(cfg.paths["caltech"],"101_ObjectCategories", class_name, img) for img in dataset_dict["caltech"][class_name]]
             elif dataset=="food":
                 dataset_dict["food"] = {}
                 with open(os.path.join(cfg.paths["food"], "split_zhou_Food101.json"), "r") as split_file:
@@ -114,22 +115,68 @@ class EpisodicSampler():
         self.paths = paths
         self.n_ways = n_ways
         
-    def __call__(self):
+    def __call__(self, seed_classes = None, seed_images = None) -> Any:
+        """
+        returns a dict where the key is the dataset name and the value is a dict of list
+
+        seed_classes: int, seed for the random sampling of the classes
+        seed_images: int, seed for the random sampling of the images
+
+        E.g.: you want to sample from the same classes but different images, set seed_classes to a fixed value and seed_images to None
+        """
         episode_dict = {}
         for dataset in self.paths:
+            if seed_classes is not None:
+                rd.seed(seed_classes)
             selected_classes = rd.sample(list(self.paths[dataset].keys()), self.n_ways[dataset])
             episode_dict[dataset] = {}
             for classe in selected_classes:
                 episode_dict[dataset][classe] = {}
+                if seed_images is not None:
+                    rd.seed(seed_images)
                 shuffle = rd.sample(self.paths[dataset][classe], min(self.n_shot+self.n_query, len(self.paths[dataset][classe])))
                 episode_dict[dataset][classe]["support"] = shuffle[:self.n_shot]
                 episode_dict[dataset][classe]["query"] = shuffle[self.n_shot:]
             
         return episode_dict
+            
         
         
-        
+class DatasetBuilder():
+    """
+    return a dict where the key is the dataset name and the value is a tuple of 4 lists:
+    support_images, support_labels, query_images, query_labels
+
+    support_images: list of PIL images
+    support_labels: list of labels
+    query_images: list of PIL images
+    query_labels: list of labels
+    """
+    def __init__(self, cfg) -> None:
+        self.cfg = cfg
+        pass
+
+    def __call__(self, seed_classes = None, seed_images = None) -> Any:
+        folder_explorer = FolderExplorer(self.cfg.paths)
+        paths = folder_explorer()
+        sampler = EpisodicSampler(paths = paths,
+                                n_query= self.cfg.sampler.n_queries,
+                                n_ways = self.cfg.sampler.n_ways,
+                                n_shot = self.cfg.sampler.n_shots)
+        episode = sampler(seed_classes = seed_classes, seed_images = seed_images)
+        # episode is (dataset, classe, support/query, image_path)
+        dataset_dict = {}
+        for dataset_name, list_classes in episode.items():
+            support_images = [Image.open(image_path).convert("RGB") for classe in list_classes for image_path in list_classes[classe]["support"]]
+            support_labels = [classe for classe in list_classes for image_path in list_classes[classe]["support"]]
+            query_images = [Image.open(image_path).convert("RGB") for classe in list_classes for image_path in list_classes[classe]["query"]]
+            query_labels = [classe for classe in list_classes for image_path in list_classes[classe]["query"]]
+            dataset_dict[dataset_name] = (support_images, support_labels, query_images, query_labels)
+        return dataset_dict
+                
     
+
+
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
 
@@ -161,11 +208,24 @@ def main_bis():
 
     episode = episodic_sampler()
 
-    for dataset_name, list_classes in episode.items():
-        print(dataset_name)
-        print(list_classes)
-        print()
+    imagenet_sample = episode["imagenet"]
 
+    print(len(imagenet_sample))
+
+
+
+def main_ter():
+    dataset_builder = DatasetBuilder()
+
+    new_dataset = dataset_builder()
+
+    for dataset_name, list_classes in new_dataset.items():
+        print(dataset_name)
+        support_images, support_labels, query_images, query_labels = list_classes
+        print("support images:  ", len(support_images))
+        print("support labels:  ", len(support_labels))
+        print("query images:  ", len(query_images))
+        print("query labels:  ", len(query_labels))
 
 if __name__== "__main__":
     main_bis()

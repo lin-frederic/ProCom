@@ -20,10 +20,10 @@ from torchvision import transforms as T
 import cv2
 from PIL import Image
 
-from lost import Lost as Lost_module
+from models.lost import Lost as Lost_module
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 
-from deepSpectralMethods import DSM
+from models.deepSpectralMethods import DSM
 
 from tools import iou, focal_loss, dice_loss
 from typing import Union

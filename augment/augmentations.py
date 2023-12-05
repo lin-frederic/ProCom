@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.ndimage as sc
 import cv2
-
+from PIL import Image
 # black background
 def remove_bg (image , mask):
     image_masked = image.copy()
@@ -11,7 +11,16 @@ def remove_bg (image , mask):
 
 # crop
 def crop (image, bbox, z):
-    return image[bbox[1]-z:bbox[1]+bbox[3]+z, bbox[0]-z:bbox[2]+bbox[0]+z]
+    # z is an additional margin
+    if isinstance(image, Image.Image):
+        image = np.array(image)
+    image = image[bbox[1]-z:bbox[1]+bbox[3]+z, bbox[0]-z:bbox[2]+bbox[0]+z]
+    return Image.fromarray(image)
+
+# crop with mask
+def crop_mask (image, mask, z):
+    bbox = [np.min(np.where(mask)[1]), np.min(np.where(mask)[0]), np.max(np.where(mask)[1]), np.max(np.where(mask)[0])]
+    return crop(image, bbox, z)
 
 def gaussian_noise(image, mask, sigma=1.5):
     # Load your image and mask
