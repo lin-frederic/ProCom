@@ -1,4 +1,5 @@
-import embedding as emb
+import augmentations as emb
+
 from torchvision import transforms as T
 import cv2
 from PIL import Image

@@ -21,6 +21,8 @@ config = {
     
     "batch_size" : 16,
     "n_runs" : 10,
+
+    "top_k": 5,
     
     
 }

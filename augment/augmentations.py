@@ -11,7 +11,13 @@ def remove_bg (image , mask):
 
 # crop
 def crop (image, bbox, z):
+    # z is an additional margin
     return image[bbox[1]-z:bbox[1]+bbox[3]+z, bbox[0]-z:bbox[2]+bbox[0]+z]
+
+# crop with mask
+def crop_mask (image, mask, z):
+    bbox = [np.min(np.where(mask)[1]), np.min(np.where(mask)[0]), np.max(np.where(mask)[1]), np.max(np.where(mask)[0])]
+    return crop(image, bbox, z)
 
 def gaussian_noise(image, mask, sigma=1.5):
     # Load your image and mask
