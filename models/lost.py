@@ -120,14 +120,10 @@ def main(n, is_grid, seed):
     
     for index in tqdm(range(n)):
     
-        #path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00000911.JPEG"
-        #path = "/nasbrain/datasets/imagenet/images/val/n01514668/ILSVRC2012_val_00004463.JPEG"
         root = "/nasbrain/datasets/imagenet/images/val/"
         folder = np.random.choice(os.listdir(root))
         path = os.path.join(root,folder)
         
-        #path = "/nasbrain/datasets/imagenet/images/val/n01514668/"
-        #path = "/nasbrain/datasets/ADE20K/ADEChallengeData2016/images/validation/ADE_val_00001399.jpg"
         
         # concatenate 4 images (grid)
         if is_grid:

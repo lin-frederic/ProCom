@@ -4,6 +4,7 @@ import numpy as np
 from torchvision import transforms as T
 from torchvision.transforms import functional as F
 import torch.nn as nn
+from PIL import Image
 
 def unravel_index(
     indices: torch.LongTensor,
@@ -126,6 +127,48 @@ class PadAndResize(nn.Module):
         bottom = delta_h - top
         
         image = F.pad(image, (left, top, right, bottom), self.pad_value)
+        
+        # convert to tensor
+        image = self.to_tensor(image)
+        
+        return image
+    
+    
+class ResizeModulo(nn.Module):
+    """
+    Resize an image to the multiple of the patch size closest to the target size
+    
+    Parameters:
+        patch_size (int) : size of the patch (default is 16)
+        target_size (int) : target size of the image (longest side)
+    Args:
+        image (PIL image): image to resize (RGB)
+    Returns:
+        tensor: tensor of shape (3, H, W)
+        where H and W are the closest multiples of patch_size and 
+        the longest side is the closest to target_size
+    """
+    def __init__(self, patch_size=16, target_size=224) -> None:
+        assert isinstance(patch_size, int) and patch_size > 0, "patch_size should be a positive int"
+        assert isinstance(target_size, int) and target_size > 0, "target_size should be a positive int"
+            
+        self.patch_size = patch_size
+        self.target_size = target_size
+        self.to_tensor = T.ToTensor()
+    def __call__(self, image: Image):
+        # image is a PIL image
+        w, h = image.size
+        
+        max_size = max(w,h)
+        ratio = max_size / self.target_size
+        new_w = int(w / ratio)
+        new_h = int(h / ratio)
+        
+        # compute new size
+        new_w = self.patch_size * round(new_w / self.patch_size)
+        new_h = self.patch_size * round(new_h / self.patch_size)
+        
+        image = F.resize(image, (new_h,new_w))
         
         # convert to tensor
         image = self.to_tensor(image)

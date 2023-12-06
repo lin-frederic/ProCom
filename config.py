@@ -20,9 +20,9 @@ config = {
     },
     
     "batch_size" : 32,
-    "n_runs" : 10,
+    "n_runs" : 5,
 
-    "top_k_masks": 1, # top k masks used for each method
+    "top_k_masks": 2, # top k masks used for each method
     
     
 }
