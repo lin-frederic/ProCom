@@ -10,6 +10,7 @@ import numpy as np
 from models.maskBlocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks
 
 from augment.augmentations import crop_mask
+from tools import PadAndResize
 
 def baseline(cfg):
     sampler = DatasetBuilder(cfg)
@@ -22,7 +23,7 @@ def baseline(cfg):
     resize = T.Resize((224,224))
 
     transforms = T.Compose([
-            resize,
+            PadAndResize(224),
             T.ToTensor(),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
@@ -187,6 +188,7 @@ def baseline_lost(cfg):
         pbar.set_description("Last Acc: {:.2f}".format(acc))
 
         L_acc.append(acc)
+        pbar.set_description("Last Acc: {:.2f}".format(acc))
 
     print("Average accuracy: ", round(np.mean(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
@@ -307,6 +309,7 @@ def main(cfg):
         acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
 
         L_acc.append(acc)
+        pbar.set_description("Last Acc: {:.2f}".format(acc))
 
     print("Average accuracy: ", round(np.mean(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))

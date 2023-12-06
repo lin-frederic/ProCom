@@ -26,7 +26,7 @@ class KMeans(torch.nn.Module):
         return torch.exp(-beta * distances[centroid_i] ** 2) / sum_distances
 
 
-    def forward(self, support_features, query_features, support_labels, query_labels, n_iter=10, beta=1):
+    def forward(self, support_features, query_features, support_labels, query_labels, n_iter=50, beta=5):
         # support_features: list of features, as a tensor of shape [n_shot, d]
         # support_labels: list of (class,image_index) tuples
         # query_features: list of features, as a tensor of shape [n_query, d]
