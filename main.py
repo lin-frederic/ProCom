@@ -24,7 +24,6 @@ def baseline(cfg):
 
     transforms = T.Compose([
             PadAndResize(224),
-            T.ToTensor(),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
@@ -111,8 +110,7 @@ def baseline_lost(cfg):
     resize = T.Resize((224,224))
 
     transforms = T.Compose([
-            resize,
-            T.ToTensor(),
+            PadAndResize(224),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
@@ -205,8 +203,7 @@ def main(cfg):
     resize = T.Resize((224,224))
 
     transforms = T.Compose([
-            resize,
-            T.ToTensor(),
+            PadAndResize(224),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
@@ -258,7 +255,7 @@ def main(cfg):
             mask_spectral = spectral(img)
             
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_id + masks_sam[:cfg.top_k] + masks_spectral[:cfg.top_k]
+            masks = masks_id + masks_sam[:cfg.top_k] # + masks_spectral[:cfg.top_k]
             support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_support_labels[i], i) for j in range(len(masks))] 
@@ -280,7 +277,7 @@ def main(cfg):
             mask_spectral = spectral(img)
 
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_id + masks_sam[:cfg.top_k] + masks_spectral[:cfg.top_k]
+            masks = masks_id + masks_sam[:cfg.top_k] # + masks_spectral[:cfg.top_k]
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
