@@ -22,7 +22,7 @@ config = {
     "batch_size" : 32,
     "n_runs" : 10,
 
-    "top_k": 1, # top k masks used for each method
+    "top_k_masks": 1, # top k masks used for each method
     
     
 }

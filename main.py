@@ -209,8 +209,8 @@ def main(cfg):
         ])
     
     identity = Identity()
-    lost_deg_seed = Lost(alpha=0.9, k=100, model=model)
-    lost_atn_seed = Lost(alpha=0.1, k=100, model=model)
+    lost_deg_seed = Lost(alpha=0.95, k=100, model=model)
+    lost_atn_seed = Lost(alpha=0.05, k=100, model=model)
     spectral = DeepSpectralMethods(model=model, 
                                    n_eigenvectors=15, 
                                    lambda_color=5)
@@ -255,7 +255,7 @@ def main(cfg):
             mask_spectral = spectral(img)
             
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_id + masks_sam[:cfg.top_k] # + masks_spectral[:cfg.top_k]
+            masks = masks_id + masks_sam[:cfg.top_k_masks] # + masks_spectral[:cfg.top_k_masks]
             support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_support_labels[i], i) for j in range(len(masks))] 
@@ -277,7 +277,7 @@ def main(cfg):
             mask_spectral = spectral(img)
 
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_id + masks_sam[:cfg.top_k] # + masks_spectral[:cfg.top_k]
+            masks = masks_id + masks_sam[:cfg.top_k_masks] # + masks_spectral[:cfg.top_k_masks]
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
