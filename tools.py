@@ -165,8 +165,8 @@ class ResizeModulo(nn.Module):
         new_h = int(h / ratio)
         
         # compute new size
-        new_w = self.patch_size * round(new_w / self.patch_size)
-        new_h = self.patch_size * round(new_h / self.patch_size)
+        new_w = self.patch_size * (round(new_w / self.patch_size) + 1)
+        new_h = self.patch_size * (round(new_h / self.patch_size) + 1)
         
         image = F.resize(image, (new_h,new_w))
         
