@@ -115,7 +115,7 @@ class EpisodicSampler():
         self.paths = paths
         self.n_ways = n_ways
         
-    def __call__(self, seed_classes = None, seed_images = None) -> Any:
+    def __call__(self, seed_classes = 42, seed_images = 42) -> Any:
         """
         returns a dict where the key is the dataset name and the value is a dict of list
 
@@ -167,9 +167,9 @@ class DatasetBuilder():
         # episode is (dataset, classe, support/query, image_path)
         dataset_dict = {}
         for dataset_name, list_classes in episode.items():
-            support_images = [Image.open(image_path).convert("RGB") for classe in list_classes for image_path in list_classes[classe]["support"]]
+            support_images = [image_path for classe in list_classes for image_path in list_classes[classe]["support"]]
             support_labels = [classe for classe in list_classes for image_path in list_classes[classe]["support"]]
-            query_images = [Image.open(image_path).convert("RGB") for classe in list_classes for image_path in list_classes[classe]["query"]]
+            query_images = [image_path for classe in list_classes for image_path in list_classes[classe]["query"]]
             query_labels = [classe for classe in list_classes for image_path in list_classes[classe]["query"]]
             dataset_dict[dataset_name] = (support_images, support_labels, query_images, query_labels)
         return dataset_dict

@@ -20,10 +20,10 @@ config = {
     },
     
     "batch_size" : 32,
-    "n_runs" : 5,
+    "n_runs" : 1000,
 
-    "top_k_masks": 2, # top k masks used for each method
-    
+    "top_k_masks": 1, # top k masks used for each method
+    "sam_cache" : "/nasbrain/f21lin/PROCOM/cache" # path of imgs for which masks have been computed
     
 }
 

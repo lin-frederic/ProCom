@@ -8,9 +8,12 @@ from torchvision import transforms as T
 from tqdm import tqdm
 import numpy as np
 from models.maskBlocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks
-
+from uuid import uuid4
 from augment.augmentations import crop_mask
 from tools import PadAndResize
+from PIL import Image
+import os
+import json
 
 def baseline(cfg):
     sampler = DatasetBuilder(cfg)
@@ -43,19 +46,15 @@ def baseline(cfg):
 
         support_images, temp_support_labels, query_images, temp_query_labels = imagenet_sample
 
-        support_images = [resize(image) for image in support_images]    
-
-        query_images = [resize(image) for image in query_images]
-
 
         # strategy: take the identity mask + the top k (config) sam masks 
 
         support_augmented_imgs = []
         support_labels = []
 
-        for i, img in enumerate(support_images):
+        for i, img_path in enumerate(support_images):
+            img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
-        
             masks = masks_id 
             support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
@@ -63,7 +62,8 @@ def baseline(cfg):
         
         query_augmented_imgs = []
         query_labels = []
-        for i, img in enumerate(query_images):
+        for i, img_path in enumerate(query_images):
+            img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
             masks = masks_id
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
@@ -109,6 +109,7 @@ def baseline_no_sam(cfg):
     resize = T.Resize((224*2,224*2))
 
     transforms = T.Compose([
+            T.ToTensor(),
             ResizeModulo(patch_size=16, target_size=224),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
@@ -133,17 +134,13 @@ def baseline_no_sam(cfg):
 
         support_images, temp_support_labels, query_images, temp_query_labels = imagenet_sample
 
-        support_images = [resize(image) for image in support_images]    
-
-        query_images = [resize(image) for image in query_images]
-
-
         # strategy: take the identity mask + the top k (config) sam masks 
 
         support_augmented_imgs = []
         support_labels = []
 
-        for i, img in enumerate(support_images):
+        for i, img_path in enumerate(support_images):
+            img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
             masks_spectral = spectral(img)
             masks = masks_id + masks_spectral[:cfg.top_k_masks]
@@ -153,7 +150,8 @@ def baseline_no_sam(cfg):
         
         query_augmented_imgs = []
         query_labels = []
-        for i, img in enumerate(query_images):
+        for i, img_path in enumerate(query_images):
+            img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
             masks_spectral = spectral(img)
             masks = masks_id + masks_spectral[:cfg.top_k_masks]
@@ -217,6 +215,12 @@ def main(cfg):
     ncm = NCM()
 
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
+    if not os.path.exists(cfg.sam_cache+"/cache.json"):
+        # create the cache 
+        json.dump({}, open(cfg.sam_cache+"/cache.json", "w"))
+    with open(cfg.sam_cache+"/cache.json", "r") as f:
+        sam_cache = json.load(f)
+    
 
     for episode_idx in pbar:
         
@@ -226,52 +230,84 @@ def main(cfg):
         imagenet_sample = episode["imagenet"]
 
         support_images, temp_support_labels, query_images, temp_query_labels = imagenet_sample
-
-        support_images = [resize(image) for image in support_images]    
-
-        query_images = [resize(image) for image in query_images]
-
         support_augmented_imgs = []
         support_labels = []
-
-        for i, img in enumerate(support_images):
+        for i, img_path in enumerate(support_images):
+            img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
             mask_lost = lost_deg_seed(img) + lost_atn_seed(img) # concatenate the output of the two lost blocks
             approx_area = np.mean([mask["area"] for mask in mask_lost]) # average area of the lost masks
 
             # filter out masks that are too small
-            mask_sam = sam(img)
-            mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area] 
-            # keep the same magnitude of area as the lost masks
-            if len(mask_sam_f) > 2:
-                mask_sam = mask_sam_f
-
+            if img_path not in sam_cache:
+                mask_sam = sam(img)
+                mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area] 
+                # keep the same magnitude of area as the lost masks
+                if len(mask_sam_f) > 2:
+                    mask_sam = mask_sam_f
+                img_name = img_path.split("/")[-1]
+                img_name = img_name.split(".")[0]
+                masks = [mask_sam[j]["segmentation"] for j in range(len(mask_sam))]
+                areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
+                masks = np.array(masks)
+                areas = np.array(areas)
+                cache_name = f"{cfg.sam_cache}/{img_name}.npz"
+                np.savez_compressed(cache_name, masks=masks, areas=areas)
+                sam_cache[img_path] = cache_name
+                with open(cfg.sam_cache+"/cache.json", "w") as f:
+                    json.dump(sam_cache, f)
+            else:
+                cache = np.load(sam_cache[img_path])
+                masks = cache["masks"]
+                areas = cache["areas"]
+                mask_sam = [{"area": areas[j], "segmentation": masks[j]} for j in range(len(masks))]
+                            
             mask_spectral = spectral(img)
             
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_id + masks_sam[:cfg.top_k_masks] # + masks_spectral[:cfg.top_k_masks]
+            masks = masks_sam[:cfg.top_k_masks] # + masks_spectral[:cfg.top_k_masks]
             support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
-
             labels = [(temp_support_labels[i], i) for j in range(len(masks))] 
             support_labels += labels
 
         query_augmented_imgs = []
         query_labels = []
 
-        for i, img in enumerate(query_images):
+        for i, img_path in enumerate(query_images):
+            img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
             mask_lost = lost_deg_seed(img) + lost_atn_seed(img)
             approx_area = np.mean([mask["area"] for mask in mask_lost])
 
-            mask_sam = sam(img)
-            mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area]
-            if len(mask_sam_f) > 2:
-                mask_sam = mask_sam_f
+             # filter out masks that are too small
+            if img_path not in sam_cache:
+                mask_sam = sam(img)
+                mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area] 
+                # keep the same magnitude of area as the lost masks
+                if len(mask_sam_f) > 2:
+                    mask_sam = mask_sam_f
+                img_name = img_path.split("/")[-1]
+                img_name = img_name.split(".")[0]
+                masks = [mask_sam[j]["segmentation"] for j in range(len(mask_sam))]
+                areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
+                masks = np.array(masks)
+                areas = np.array(areas)
+                cache_name = f"{cfg.sam_cache}/{img_name}.npz"
+                np.savez_compressed(cache_name, masks=masks, areas=areas)
+                sam_cache[img_path] = cache_name
+                with open(cfg.sam_cache+"/cache.json", "w") as f:
+                    json.dump(sam_cache, f)
+            else:
+                cache = np.load(sam_cache[img_path])
+                masks = cache["masks"]
+                areas = cache["areas"]
+                mask_sam = [{"area": areas[j], "segmentation": masks[j]} for j in range(len(masks))]
+                    
             
             mask_spectral = spectral(img)
 
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_sam[:cfg.top_k_masks] + masks_spectral[:cfg.top_k_masks]
+            masks = masks_sam[:cfg.top_k_masks] #+ masks_spectral[:cfg.top_k_masks]
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
@@ -289,6 +325,10 @@ def main(cfg):
         with torch.inference_mode():
             for i in range(len(support_augmented_imgs)):
                 inputs = support_augmented_imgs[i].unsqueeze(0)
+                """to_display = inputs.squeeze(0).permute(1,2,0).cpu().numpy()
+                to_display = (to_display - np.min(to_display))/(np.max(to_display) - np.min(to_display))*255
+                to_display = to_display.astype(np.uint8)
+                Image.fromarray(to_display).save(f"results/{i}_{uuid4()}.png")"""
                 outputs = model(inputs).squeeze(0)
                 support_tensor[i] = outputs
 

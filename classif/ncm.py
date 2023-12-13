@@ -3,9 +3,10 @@ import torch.nn.functional as F
 from tools import preprocess_Features
 
 class NCM(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, top_k=1):
         super(NCM, self).__init__()
         self.preprocess_NCM_layer = preprocess_Features()
+        self.top_k = top_k
 
     def forward(self, support_features, query_features, support_labels, query_labels, use_cosine=False):
         # support_features: list of features, as a tensor of shape [n_shot, d]
@@ -33,13 +34,19 @@ class NCM(torch.nn.Module):
                 visited.add(query_index)
                 indices = [j for j, (class_, index_) in enumerate(query_labels) if index_ == query_index]
                 query_similarity = similarity[indices, :] # [n_masks, n_shot]
-                support_similarity, support_indices = torch.max(query_similarity, dim=1) # [n_masks]
-                # this would be the predicted class for each mask
-                # now we take the highest similarity
-                mask_sim, mask_index = torch.max(support_similarity, dim=0)
-                pred_idx = support_indices[mask_index]
-                pred_class = support_labels[pred_idx][0]
-                acc += int(pred_class == query_class)
+                n_masks, n_shot = query_similarity.shape 
+                query_similarity = query_similarity.flatten()
+                # the first n_shot elements are for the first mask, the next n_shot for the second mask, etc
+                sorted_similarity, sorted_indices = torch.sort(query_similarity, descending=True)
+                # get the top k indices
+                top_k_indices = sorted_indices[:self.top_k]
+                # get the top k masks, and the top k corresponding support features
+                top_k_masks = top_k_indices // n_shot
+                top_k_support = top_k_indices % n_shot
+                top_k_classes = [support_labels[i][0] for i in top_k_support]
+                # calculate top k accuracy
+                if query_class in top_k_classes:
+                    acc += 1
         acc = acc / len(query_features)
         return acc
         
