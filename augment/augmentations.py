@@ -28,12 +28,17 @@ def crop (image, bbox, z, dezoom = 0.3):
 def crop_mask (image, mask, z):
     #mask is (H,W)
     #image is (H,W,3)
-    x_min = np.min(np.where(mask)[1])
-    y_min = np.min(np.where(mask)[0])
-    x_max = np.max(np.where(mask)[1])
-    y_max = np.max(np.where(mask)[0])
-    bbox = [x_min, y_min, x_max-x_min, y_max-y_min]
-    return crop(image, bbox, z)
+    
+    # if the mask is empty, we return the image
+    if len(np.where(mask)[0]) == 0 or len(np.where(mask)[1]) == 0:
+        return image
+    else:
+        x_min = np.min(np.where(mask)[1])
+        y_min = np.min(np.where(mask)[0])
+        x_max = np.max(np.where(mask)[1])
+        y_max = np.max(np.where(mask)[0])
+        bbox = [x_min, y_min, x_max-x_min, y_max-y_min]
+        return crop(image, bbox, z)
 
 def gaussian_noise(image, mask, sigma=1.5):
     # Load your image and mask

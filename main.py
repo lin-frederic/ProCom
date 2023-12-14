@@ -41,7 +41,10 @@ def baseline(cfg):
     for episode_idx in pbar:
         
         # new sample for each run
-        episode = sampler() #episode is (dataset, classe, support/query, image_path)
+        episode = sampler(
+            seed_classes=episode_idx, 
+            seed_images=episode_idx
+        ) #episode is (dataset, classe, support/query, image_path)
 
         imagenet_sample = episode["imagenet"]
 
@@ -66,7 +69,7 @@ def baseline(cfg):
         for i, img_path in enumerate(query_images):
             img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
-            masks = masks_id*3
+            masks = masks_id
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
@@ -93,6 +96,12 @@ def baseline(cfg):
         acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
 
         L_acc.append(acc)
+
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+
         pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
 
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))   
@@ -227,7 +236,7 @@ def main(cfg):
         
         # new sample for each run
         episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
-         #episode is (dataset, classe, support/query, image_path)
+        #episode is (dataset, classe, support/query, image_path)
 
         imagenet_sample = episode["imagenet"]
 
@@ -363,6 +372,8 @@ if __name__ == "__main__":
     parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
 
     args = parser.parse_args()
+
+    cfg["type"] = args.type
 
     if args.wandb:
         wandb.login()
