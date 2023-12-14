@@ -14,7 +14,7 @@ from tools import PadAndResize
 from PIL import Image
 import os
 import json
-import random
+import wandb
 
 def baseline(cfg):
     sampler = DatasetBuilder(cfg)
@@ -226,7 +226,8 @@ def main(cfg):
     for episode_idx in pbar:
         
         # new sample for each run
-        episode = sampler() #episode is (dataset, classe, support/query, image_path)
+        episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
+         #episode is (dataset, classe, support/query, image_path)
 
         imagenet_sample = episode["imagenet"]
 
@@ -343,6 +344,11 @@ def main(cfg):
         L_acc.append(acc)
         pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
 
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))   
     print("All accuracies: ", np.round(L_acc,2))
 
@@ -354,8 +360,15 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", "-t", type=str, default="baseline", help="baseline, nosam, main")
-    
+    parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
+
     args = parser.parse_args()
+
+    if args.wandb:
+        wandb.login()
+        wandb.init(project="procom-transformers", entity="procom")
+        cfg["wandb"] = True
+        wandb.config.update(cfg)
     
     if args.type == "baseline":
         baseline(cfg)

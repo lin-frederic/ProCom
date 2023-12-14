@@ -2,6 +2,7 @@ from box import Box
 from pprint import pprint
 
 config = { 
+    "wandb" : False,
     "paths" : {
         "imagenet" : "/nasbrain/datasets/imagenet/images/val",
         "cub" : "/nasbrain/datasets/CUB_200_2011",
