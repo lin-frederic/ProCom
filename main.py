@@ -14,6 +14,7 @@ from tools import PadAndResize
 from PIL import Image
 import os
 import json
+import random
 
 def baseline(cfg):
     sampler = DatasetBuilder(cfg)
@@ -55,7 +56,7 @@ def baseline(cfg):
         for i, img_path in enumerate(support_images):
             img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
-            masks = masks_id 
+            masks = masks_id
             support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
@@ -65,7 +66,7 @@ def baseline(cfg):
         for i, img_path in enumerate(query_images):
             img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
-            masks = masks_id
+            masks = masks_id*3
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
@@ -265,7 +266,7 @@ def main(cfg):
             mask_spectral = spectral(img)
             
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_sam[:cfg.top_k_masks] # + masks_spectral[:cfg.top_k_masks]
+            masks = masks_sam[:cfg.top_k_masks] + masks_spectral[:cfg.top_k_masks]
             support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))] 
             support_labels += labels
@@ -307,7 +308,7 @@ def main(cfg):
             mask_spectral = spectral(img)
 
             masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_sam[:cfg.top_k_masks] #+ masks_spectral[:cfg.top_k_masks]
+            masks = masks_sam[:cfg.top_k_masks] + masks_spectral[:cfg.top_k_masks]
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]

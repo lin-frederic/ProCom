@@ -47,7 +47,7 @@ class NCM(torch.nn.Module):
                 # calculate top k accuracy
                 if query_class in top_k_classes:
                     acc += 1
-        acc = acc / len(query_features)
+        acc = acc / len(visited)
         return acc
         
 
