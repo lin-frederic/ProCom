@@ -139,6 +139,8 @@ def main(cfg):
     dataset = cfg.dataset
 
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
+    if not os.path.exists(f"{cfg.sam_cache}/{dataset}"):
+        os.mkdir(f"{cfg.sam_cache}/{dataset}")
     if not os.path.exists(f"{cfg.sam_cache}/{dataset}/cache.json"):
         # create the cache 
         json.dump({}, open(f"{cfg.sam_cache}/{dataset}/cache.json", "w"))
