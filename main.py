@@ -12,10 +12,9 @@ from tools import PadAndResize, ResizeModulo
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
-from models.maskBlocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks
+from models.maskblocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks
 from augment.augmentations import crop_mask
 from dataset import DatasetBuilder
-
 
 
 def baseline(cfg):
@@ -65,7 +64,7 @@ def baseline(cfg):
             masks_id = identity(img)
             masks = masks_id
             support_augmented_imgs += [
-                crop_mask(img, mask["segmentation"], z=0) for mask in masks
+                crop_mask(img, mask["segmentation"]) for mask in masks
             ]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
@@ -77,7 +76,7 @@ def baseline(cfg):
             masks_id = identity(img)
             masks = masks_id
             query_augmented_imgs += [
-                crop_mask(img, mask["segmentation"], z=0) for mask in masks
+                crop_mask(img, mask["segmentation"]) for mask in masks
             ]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
@@ -98,14 +97,14 @@ def baseline(cfg):
 
         with torch.inference_mode():
             for i in range(0, len(support_augmented_imgs), bs):
-                inputs = torch.stack(support_augmented_imgs[i : i + bs])
+                inputs = torch.stack(support_augmented_imgs[i: i + bs])
                 outputs = model(inputs)
-                support_tensor[i : i + bs] = outputs
+                support_tensor[i: i + bs] = outputs
 
             for i in range(0, len(query_augmented_imgs), bs):
-                inputs = torch.stack(query_augmented_imgs[i : i + bs])
+                inputs = torch.stack(query_augmented_imgs[i: i + bs])
                 outputs = model(inputs)
-                query_tensor[i : i + bs] = outputs
+                query_tensor[i: i + bs] = outputs
 
         acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
 
@@ -119,11 +118,13 @@ def baseline(cfg):
                 }
             )
 
-        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+        pbar.set_description(
+            f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
 
     print(
-        "Average accuracy: ", round(np.mean(L_acc), 2), "std: ", round(np.std(L_acc), 2)
-    )
+        "Average accuracy: ", round(
+            np.mean(L_acc), 2), "std: ", round(
+            np.std(L_acc), 2))
     print("All accuracies: ", np.round(L_acc, 2))
 
 
@@ -149,7 +150,8 @@ def main(cfg):
 
     lost_deg_seed = Lost(alpha=0.95, k=100, model=model)
     lost_atn_seed = Lost(alpha=0.05, k=100, model=model)
-    spectral = DeepSpectralMethods(model=model, n_eigenvectors=15, lambda_color=5)
+    spectral = DeepSpectralMethods(
+        model=model, n_eigenvectors=15, lambda_color=5)
     sam = SAM()
 
     L_acc = []
@@ -159,7 +161,12 @@ def main(cfg):
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
     if not os.path.exists(f"{cfg.sam_cache}/{dataset}/cache.json"):
         # create the cache
-        json.dump({}, open(f"{cfg.sam_cache}/{dataset}/cache.json", "w", encoding="utf-8"))
+        json.dump(
+            {},
+            open(
+                f"{cfg.sam_cache}/{dataset}/cache.json",
+                "w",
+                encoding="utf-8"))
     with open(f"{cfg.sam_cache}/{dataset}/cache.json", "r", encoding="utf-8") as f:
         sam_cache = json.load(f)
 
@@ -185,14 +192,15 @@ def main(cfg):
             if img_path not in sam_cache:
                 mask_sam = sam(img)
                 mask_sam_f = [
-                    mask for mask in mask_sam if mask["area"] > 0.4 * approx_area
-                ]
+                    mask for mask in mask_sam if mask["area"] > 0.4 *
+                    approx_area]
                 # keep the same magnitude of area as the lost masks
                 if len(mask_sam_f) > 2:
                     mask_sam = mask_sam_f
                 img_name = img_path.split("/")[-1]
                 img_name = img_name.split(".")[0]
-                masks = [mask_sam[j]["segmentation"] for j in range(len(mask_sam))]
+                masks = [mask_sam[j]["segmentation"]
+                         for j in range(len(mask_sam))]
                 areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
                 masks = np.array(masks)
                 areas = np.array(areas)
@@ -215,9 +223,10 @@ def main(cfg):
             masks_sam, masks_spectral, _ = combine_masks(
                 mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True
             )
-            masks = masks_sam[: cfg.top_k_masks] + masks_spectral[: cfg.top_k_masks]
+            masks = masks_sam[: cfg.top_k_masks] + \
+                masks_spectral[: cfg.top_k_masks]
             support_augmented_imgs += [
-                crop_mask(img, mask["segmentation"], z=0) for mask in masks
+                crop_mask(img, mask["segmentation"]) for mask in masks
             ]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
@@ -234,14 +243,15 @@ def main(cfg):
             if img_path not in sam_cache:
                 mask_sam = sam(img)
                 mask_sam_f = [
-                    mask for mask in mask_sam if mask["area"] > 0.4 * approx_area
-                ]
+                    mask for mask in mask_sam if mask["area"] > 0.4 *
+                    approx_area]
                 # keep the same magnitude of area as the lost masks
                 if len(mask_sam_f) > 2:
                     mask_sam = mask_sam_f
                 img_name = img_path.split("/")[-1]
                 img_name = img_name.split(".")[0]
-                masks = [mask_sam[j]["segmentation"] for j in range(len(mask_sam))]
+                masks = [mask_sam[j]["segmentation"]
+                         for j in range(len(mask_sam))]
                 areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
                 masks = np.array(masks)
                 areas = np.array(areas)
@@ -264,9 +274,10 @@ def main(cfg):
             masks_sam, masks_spectral, _ = combine_masks(
                 mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True
             )
-            masks = masks_sam[: cfg.top_k_masks] + masks_spectral[: cfg.top_k_masks]
+            masks = masks_sam[: cfg.top_k_masks] + \
+                masks_spectral[: cfg.top_k_masks]
             query_augmented_imgs += [
-                crop_mask(img, mask["segmentation"], z=0) for mask in masks
+                crop_mask(img, mask["segmentation"]) for mask in masks
             ]
 
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
@@ -304,7 +315,8 @@ def main(cfg):
         acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
 
         L_acc.append(acc)
-        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+        pbar.set_description(
+            f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
 
         if cfg.wandb:
             wandb.log(
@@ -315,8 +327,9 @@ def main(cfg):
             )
 
     print(
-        "Average accuracy: ", round(np.mean(L_acc), 2), "std: ", round(np.std(L_acc), 2)
-    )
+        "Average accuracy: ", round(
+            np.mean(L_acc), 2), "std: ", round(
+            np.std(L_acc), 2))
     print("All accuracies: ", np.round(L_acc, 2))
 
 
@@ -328,8 +341,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--type", "-t", type=str, default="baseline", help="baseline, nosam, main"
-    )
+        "--type",
+        "-t",
+        type=str,
+        default="baseline",
+        help="baseline, nosam, main")
     parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
     parser.add_argument(
         "--dataset",

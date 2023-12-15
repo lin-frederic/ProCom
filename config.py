@@ -1,42 +1,45 @@
-from box import Box
+"""Config file for PROCOM experiments."""
+
 from pprint import pprint
+from box import Box
 
-config = { 
-    "wandb" : False,
-    "paths" : {
-        "imagenet" : "/nasbrain/datasets/imagenet/images/val",
-        "cub" : "/nasbrain/datasets/CUB_200_2011",
-        "caltech" : "/nasbrain/datasets/caltech-101",
-        "food" : "/nasbrain/datasets/food-101",
-        "cifarfs" : "/nasbrain/datasets/cifar_fs",
-        "fungi" : "/nasbrain/datasets/fungi",
-        "flowers" : "/nasbrain/datasets/oxford_flowers",
-        "pets" : "/nasbrain/datasets/oxford_pets",
+config = {
+    "wandb": False,
+    "paths": {
+        "imagenet": "/nasbrain/datasets/imagenet/images/val",
+        "cub": "/nasbrain/datasets/CUB_200_2011",
+        "caltech": "/nasbrain/datasets/caltech-101",
+        "food": "/nasbrain/datasets/food-101",
+        "cifarfs": "/nasbrain/datasets/cifar_fs",
+        "fungi": "/nasbrain/datasets/fungi",
+        "flowers": "/nasbrain/datasets/oxford_flowers",
+        "pets": "/nasbrain/datasets/oxford_pets",
     },
-    "sampler" : {
-        "n_ways" : None, # if None, will be set to 5 for all datasets
-        
-        "n_shots" : 1,
-        "n_queries" : 15,
-    },
-    
-    "batch_size" : 32,
-    "n_runs" : 100,
+    "sampler": {
+        "n_ways": None,  # if None, will be set to 5 for all datasets
 
-    "top_k_masks": 2, # top k masks used for each method
-    "sam_cache" : "/nasbrain/f21lin/PROCOM/cache" # path of imgs for which masks have been computed
-    
+        "n_shots": 1,
+        "n_queries": 15,
+    },
+
+    "batch_size": 32,
+    "n_runs": 100,
+
+    "top_k_masks": 2,  # top k masks used for each method
+    # path of imgs for which masks have been computed
+    "sam_cache": "/nasbrain/f21lin/PROCOM/cache"
+
 }
 
 cfg = Box(config)
 
 if cfg.sampler.n_ways is None:
     cfg.sampler.n_ways = {}
-    for k,v in cfg.paths.items():
+    for k, v in cfg.paths.items():
         cfg.sampler.n_ways[k] = 5
 elif isinstance(cfg.sampler.n_ways, int):
     n_ways = cfg.sampler.n_ways
-    cfg.sampler.n_ways = {k:n_ways for k in cfg.paths.keys()}
+    cfg.sampler.n_ways = {k: n_ways for k in cfg.paths.keys()}
 
 
 if __name__ == "__main__":

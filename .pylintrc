@@ -1,6 +1,6 @@
 [MASTER]
-extension-pkg-whitelist=numpy,torch
+extension-pkg-whitelist=numpy,torch,cv2, torch.nn.functional
 
 [TYPECHECK]
-ignored-modules=numpy,torch
-ignored-classes=numpy,torch
+ignored-modules=numpy,torch,cv2, torch.nn.functional
+ignored-classes=numpy,torch,cv2, torch.nn.functional
