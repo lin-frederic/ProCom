@@ -35,7 +35,7 @@ def baseline(cfg):
     identity = Identity()
     L_acc = []
     ncm = NCM()
-
+    dataset = cfg.dataset
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
 
     for episode_idx in pbar:
@@ -46,9 +46,9 @@ def baseline(cfg):
             seed_images=episode_idx
         ) #episode is (dataset, classe, support/query, image_path)
 
-        imagenet_sample = episode["imagenet"]
+        sample = episode[dataset]
 
-        support_images, temp_support_labels, query_images, temp_query_labels = imagenet_sample
+        support_images, temp_support_labels, query_images, temp_query_labels = sample
 
 
         # strategy: take the identity mask + the top k (config) sam masks 
@@ -108,94 +108,7 @@ def baseline(cfg):
     print("All accuracies: ", np.round(L_acc,2))
 
 
-def baseline_no_sam(cfg):
-    sampler = DatasetBuilder(cfg)
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = get_model(size="s",use_v2=False)
-    model.to(device)
-    model.eval()
 
-    resize = T.Resize((224*2,224*2))
-
-    transforms = T.Compose([
-            T.ToTensor(),
-            ResizeModulo(patch_size=16, target_size=224),
-            T.Normalize(mean=[0.485,0.456,0.406],
-                        std=[0.229,0.224,0.225]) # imagenet mean and std
-        ])
-    
-    identity = Identity()
-    spectral = DeepSpectralMethods(model=model,
-                                      n_eigenvectors=cfg.top_k_masks,
-                                      lambda_color=10)
-
-    L_acc = []
-    ncm = NCM()
-
-    pbar = tqdm(range(cfg.n_runs), desc="Runs")
-
-    for episode_idx in pbar:
-        
-        # new sample for each run
-        episode = sampler() #episode is (dataset, classe, support/query, image_path)
-
-        imagenet_sample = episode["imagenet"]
-
-        support_images, temp_support_labels, query_images, temp_query_labels = imagenet_sample
-
-        # strategy: take the identity mask + the top k (config) sam masks 
-
-        support_augmented_imgs = []
-        support_labels = []
-
-        for i, img_path in enumerate(support_images):
-            img = resize(Image.open(img_path).convert("RGB"))
-            masks_id = identity(img)
-            masks_spectral = spectral(img)
-            masks = masks_id + masks_spectral[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
-            labels = [(temp_support_labels[i], i) for j in range(len(masks))]
-            support_labels += labels
-        
-        query_augmented_imgs = []
-        query_labels = []
-        for i, img_path in enumerate(query_images):
-            img = resize(Image.open(img_path).convert("RGB"))
-            masks_id = identity(img)
-            masks_spectral = spectral(img)
-            masks = masks_id + masks_spectral[:cfg.top_k_masks]
-            query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
-            labels = [(temp_query_labels[i], i) for j in range(len(masks))]
-            query_labels += labels
-        
-        support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
-        query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
-
-        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector
-        query_tensor = torch.zeros((len(query_augmented_imgs), 384))
-
-        #bs = cfg.batch_size
-        
-        with torch.inference_mode():
-            for i in range(len(support_augmented_imgs)):
-                inputs = support_augmented_imgs[i].unsqueeze(0)
-                outputs = model(inputs).squeeze(0)
-                support_tensor[i] = outputs
-
-            for i in range(len(query_augmented_imgs)):
-                inputs = query_augmented_imgs[i].unsqueeze(0)
-                outputs = model(inputs).squeeze(0)
-                query_tensor[i] = outputs
-
-        acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
-
-        L_acc.append(acc)
-        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
-
-    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))   
-    print("All accuracies: ", np.round(L_acc,2))
-    
 
 def main(cfg):
     sampler = DatasetBuilder(cfg)
@@ -223,12 +136,13 @@ def main(cfg):
 
     L_acc = []
     ncm = NCM()
+    dataset = cfg.dataset
 
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
-    if not os.path.exists(cfg.sam_cache+"/cache.json"):
+    if not os.path.exists(f"{cfg.sam_cache}/{dataset}/cache.json"):
         # create the cache 
-        json.dump({}, open(cfg.sam_cache+"/cache.json", "w"))
-    with open(cfg.sam_cache+"/cache.json", "r") as f:
+        json.dump({}, open(f"{cfg.sam_cache}/{dataset}/cache.json", "w"))
+    with open(f"{cfg.sam_cache}/{dataset}/cache.json", "r") as f:
         sam_cache = json.load(f)
     
 
@@ -238,9 +152,9 @@ def main(cfg):
         episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
         #episode is (dataset, classe, support/query, image_path)
 
-        imagenet_sample = episode["imagenet"]
+        sample = episode[dataset]
 
-        support_images, temp_support_labels, query_images, temp_query_labels = imagenet_sample
+        support_images, temp_support_labels, query_images, temp_query_labels = sample
         support_augmented_imgs = []
         support_labels = []
         for i, img_path in enumerate(support_images):
@@ -262,10 +176,10 @@ def main(cfg):
                 areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
                 masks = np.array(masks)
                 areas = np.array(areas)
-                cache_name = f"{cfg.sam_cache}/{img_name}.npz"
+                cache_name = f"{cfg.sam_cache}/{dataset}/{img_name}.npz"
                 np.savez_compressed(cache_name, masks=masks, areas=areas)
                 sam_cache[img_path] = cache_name
-                with open(cfg.sam_cache+"/cache.json", "w") as f:
+                with open(f"{cfg.sam_cache}/{dataset}/cache.json", "w") as f:
                     json.dump(sam_cache, f)
             else:
                 cache = np.load(sam_cache[img_path])
@@ -370,10 +284,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", "-t", type=str, default="baseline", help="baseline, nosam, main")
     parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
-
+    parser.add_argument("--dataset", "-d", type=str, default="imagenet", help="imagenet, cub, caltech, food, cifarfs, fungi, flowers, pets")
     args = parser.parse_args()
 
     cfg["type"] = args.type
+    cfg["dataset"] = args.dataset
 
     if args.wandb:
         wandb.login()
@@ -383,7 +298,6 @@ if __name__ == "__main__":
     
     if args.type == "baseline":
         baseline(cfg)
-    elif args.type == "nosam":
-        baseline_no_sam(cfg)
+
     elif args.type == "main":
         main(cfg)
