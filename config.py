@@ -24,8 +24,8 @@ config = {
     "n_runs" : 100,
 
     "top_k_masks": 2, # top k masks used for each method
-    "sam_cache" : "/nasbrain/f21lin/PROCOM/cache" # path of imgs for which masks have been computed
-    
+    "sam_cache" : "/nasbrain/f21lin/PROCOM/cache", # path of imgs for which masks have been computed,
+    "dataset": "imagenet"
 }
 
 cfg = Box(config)

@@ -7,7 +7,7 @@ from tools import ResizeModulo
 from torchvision import transforms as T
 from tqdm import tqdm
 import numpy as np
-from models.maskBlocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks
+from models.maskBlocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks, filter_masks
 from uuid import uuid4
 from augment.augmentations import crop_mask
 from tools import PadAndResize
@@ -127,8 +127,8 @@ def main(cfg):
         ])
     
     identity = Identity()
-    lost_deg_seed = Lost(alpha=0.95, k=100, model=model)
-    lost_atn_seed = Lost(alpha=0.05, k=100, model=model)
+    """lost_deg_seed = Lost(alpha=0.95, k=100, model=model)
+    lost_atn_seed = Lost(alpha=0.05, k=100, model=model)"""
     spectral = DeepSpectralMethods(model=model, 
                                    n_eigenvectors=15, 
                                    lambda_color=5)
@@ -146,7 +146,6 @@ def main(cfg):
         json.dump({}, open(f"{cfg.sam_cache}/{dataset}/cache.json", "w"))
     with open(f"{cfg.sam_cache}/{dataset}/cache.json", "r") as f:
         sam_cache = json.load(f)
-    
 
     for episode_idx in pbar:
         
@@ -162,11 +161,60 @@ def main(cfg):
         for i, img_path in enumerate(support_images):
             img = resize(Image.open(img_path).convert("RGB"))
             masks_id = identity(img)
-            mask_lost = lost_deg_seed(img) + lost_atn_seed(img) # concatenate the output of the two lost blocks
+            """mask_lost = lost_deg_seed(img) + lost_atn_seed(img) # concatenate the output of the two lost blocks
             approx_area = np.mean([mask["area"] for mask in mask_lost]) # average area of the lost masks
+            """
+            mask_spectral = spectral(img)
+            approx_area = np.mean([mask["area"] for mask in mask_spectral]) # this should correspond to the area of an object approximately
 
             # filter out masks that are too small
-            if img_path not in sam_cache:
+            try:
+                cache = np.load(sam_cache[img_path])
+                masks = cache["masks"]
+                areas = cache["areas"]
+                mask_sam = [{"area": areas[j], "segmentation": masks[j]} for j in range(len(masks))]
+            except FileNotFoundError:
+                mask_sam = sam(img)
+                mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area]  # filter out masks that are too small as they are probably noise
+                # keep the same magnitude of area as the lost masks
+                if len(mask_sam_f) > 2:
+                    mask_sam = mask_sam_f
+                img_name = img_path.split("/")[-1]
+                img_name = img_name.split(".")[0]
+                masks = [mask_sam[j]["segmentation"] for j in range(len(mask_sam))]
+                areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
+                masks = np.array(masks)
+                areas = np.array(areas)
+                cache_name = f"{cfg.sam_cache}/{dataset}/{img_name}.npz"
+                np.savez_compressed(cache_name, masks=masks, areas=areas)
+                sam_cache[img_path] = cache_name
+                with open(f"{cfg.sam_cache}/{dataset}/cache.json", "w") as f:
+                    json.dump(sam_cache, f)
+            #masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
+            masks_sam = filter_masks(mask_sam, mask_spectral, norm=True, postprocess=True)
+            masks = masks_sam[:cfg.top_k_masks]
+            support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
+            labels = [(temp_support_labels[i], i) for j in range(len(masks))] 
+            support_labels += labels
+
+        query_augmented_imgs = []
+        query_labels = []
+
+        for i, img_path in enumerate(query_images):
+            img = resize(Image.open(img_path).convert("RGB"))
+            masks_id = identity(img)
+            """ mask_lost = lost_deg_seed(img) + lost_atn_seed(img)
+            approx_area = np.mean([mask["area"] for mask in mask_lost])"""
+            mask_spectral = spectral(img)
+            approx_area = np.mean([mask["area"] for mask in mask_spectral]) # this should correspond to the area of an object approximately
+
+             # filter out masks that are too small
+            try:
+                cache = np.load(sam_cache[img_path])
+                masks = cache["masks"]
+                areas = cache["areas"]
+                mask_sam = [{"area": areas[j], "segmentation": masks[j]} for j in range(len(masks))]
+            except FileNotFoundError:
                 mask_sam = sam(img)
                 mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area] 
                 # keep the same magnitude of area as the lost masks
@@ -183,58 +231,8 @@ def main(cfg):
                 sam_cache[img_path] = cache_name
                 with open(f"{cfg.sam_cache}/{dataset}/cache.json", "w") as f:
                     json.dump(sam_cache, f)
-            else:
-                cache = np.load(sam_cache[img_path])
-                masks = cache["masks"]
-                areas = cache["areas"]
-                mask_sam = [{"area": areas[j], "segmentation": masks[j]} for j in range(len(masks))]
-                            
-            mask_spectral = spectral(img)
-            
-            masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_sam[:cfg.top_k_masks] + masks_spectral[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
-            labels = [(temp_support_labels[i], i) for j in range(len(masks))] 
-            support_labels += labels
-
-        query_augmented_imgs = []
-        query_labels = []
-
-        for i, img_path in enumerate(query_images):
-            img = resize(Image.open(img_path).convert("RGB"))
-            masks_id = identity(img)
-            mask_lost = lost_deg_seed(img) + lost_atn_seed(img)
-            approx_area = np.mean([mask["area"] for mask in mask_lost])
-
-             # filter out masks that are too small
-            if img_path not in sam_cache:
-                mask_sam = sam(img)
-                mask_sam_f = [mask for mask in mask_sam if mask["area"] > 0.4*approx_area] 
-                # keep the same magnitude of area as the lost masks
-                if len(mask_sam_f) > 2:
-                    mask_sam = mask_sam_f
-                img_name = img_path.split("/")[-1]
-                img_name = img_name.split(".")[0]
-                masks = [mask_sam[j]["segmentation"] for j in range(len(mask_sam))]
-                areas = [mask_sam[j]["area"] for j in range(len(mask_sam))]
-                masks = np.array(masks)
-                areas = np.array(areas)
-                cache_name = f"{cfg.sam_cache}/{img_name}.npz"
-                np.savez_compressed(cache_name, masks=masks, areas=areas)
-                sam_cache[img_path] = cache_name
-                with open(cfg.sam_cache+"/cache.json", "w") as f:
-                    json.dump(sam_cache, f)
-            else:
-                cache = np.load(sam_cache[img_path])
-                masks = cache["masks"]
-                areas = cache["areas"]
-                mask_sam = [{"area": areas[j], "segmentation": masks[j]} for j in range(len(masks))]
-                    
-            
-            mask_spectral = spectral(img)
-
-            masks_sam, masks_spectral, _ = combine_masks(mask_sam, mask_spectral, mask_lost, norm=True, postprocess=True)
-            masks = masks_sam[:cfg.top_k_masks] + masks_spectral[:cfg.top_k_masks]
+            masks_sam = filter_masks(mask_sam, mask_spectral, norm=True, postprocess=True)
+            masks = masks_sam[:cfg.top_k_masks]
             query_augmented_imgs += [crop_mask(img, mask["segmentation"], z=0) for mask in masks]
 
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]

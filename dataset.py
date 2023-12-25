@@ -115,7 +115,7 @@ class EpisodicSampler():
         self.paths = paths
         self.n_ways = n_ways
         
-    def __call__(self, seed_classes = 42, seed_images = 42) -> Any:
+    def __call__(self, seed_classes = None, seed_images = None) -> Any:
         """
         returns a dict where the key is the dataset name and the value is a dict of list
 

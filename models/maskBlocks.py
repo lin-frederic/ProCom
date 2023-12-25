@@ -170,6 +170,45 @@ class DeepSpectralMethods(nn.Module):
             mask["segmentation"] = self.clean(mask["segmentation"], 224, 224)
         return masks
     
+def postprocess_area(masks, threshold=0.5):
+    # invert mask to have an area less than 0.5 (or threshold) of the image
+    # in place operation
+        for mask in masks:
+            if mask["area"] > threshold * mask["segmentation"].shape[0] * mask["segmentation"].shape[1]:
+                mask["segmentation"] = 1 - mask["segmentation"]
+                mask["area"] = np.sum(mask["segmentation"])
+
+def postprocess_loss(mask, reference, loss):
+    # invert the mask if it minimizes the loss
+    # in place operation
+    mask = mask > 0
+    reference = reference > 0
+    inv = 1 - mask
+    if loss(inv, reference) < loss(mask, reference):
+        mask = inv
+    return mask
+def filter_masks(masks_sam, reference_masks,norm=True, postprocess=True):
+    """
+    masks_sam : list of masks from SAM
+    reference_masks : list of masks, those masks should localize the object of interest
+    we want to keep the masks from SAM that are the most similar to the reference_masks
+    based on the dice loss"""
+    if postprocess is True:
+        postprocess_area(reference_masks, threshold=0.5)
+        postprocess_area(masks_sam, threshold=0.5)
+    losses = np.zeros((len(masks_sam), len(reference_masks), 2)) # 2 losses : focal and dice
+    for i in range(len(reference_masks)):
+        for j in range(len(masks_sam)):
+            losses[j,i,0] = focal_loss(masks_sam[j]["segmentation"], reference_masks[i]["segmentation"])
+            losses[j,i,1] = dice_loss(masks_sam[j]["segmentation"], reference_masks[i]["segmentation"])
+    if norm is True:
+        losses[::,0] /= np.sum(losses[:,:,0]) # focal
+        losses[::,1] /= np.sum(losses[:,:,1]) # dice
+    losses = np.sum(losses, axis=2) # sum the losses, shape (len(masks_sam), len(reference_masks))
+    losses = np.min(losses, axis=1) # min the losses, shape (len(masks_sam),)
+    # sort the masks by loss (argsort returns the indices)
+    masks_sam = [masks_sam[i] for i in np.argsort(losses)]
+    return masks_sam
 def combine_masks(masks_sam, masks_spectral, masks_lost, norm : Union[float, bool], postprocess=True):
     """
     masks_sam : list of masks from SAM
@@ -185,23 +224,7 @@ def combine_masks(masks_sam, masks_spectral, masks_lost, norm : Union[float, boo
 
     --> intuitively, the best masks are the ones that are the most similar to the lost masks
     """
-    def postprocess_area(masks, threshold=0.5):
-    # invert mask to have an area less than 0.5 (or threshold) of the image
-    # in place operation
-        for mask in masks:
-            if mask["area"] > threshold * mask["segmentation"].shape[0] * mask["segmentation"].shape[1]:
-                mask["segmentation"] = 1 - mask["segmentation"]
-                mask["area"] = np.sum(mask["segmentation"])
-
-    def postprocess_loss(mask, reference, loss):
-        # invert the mask if it minimizes the loss
-        # in place operation
-        mask = mask > 0
-        reference = reference > 0
-        inv = 1 - mask
-        if loss(inv, reference) < loss(mask, reference):
-            mask = inv
-        return mask
+    
 
     
     # postprocess the masks

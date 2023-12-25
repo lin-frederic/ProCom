@@ -1,6 +1,11 @@
 import torch
 
 import matplotlib.pyplot as plt
+import sys
+import os
+path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if path not in sys.path:
+    sys.path.append(path)
 from dataset import EpisodicSampler, FolderExplorer
 from model import get_model, forward_dino_v1
 from config import cfg
@@ -64,35 +69,36 @@ class DSM(nn.Module):
         self.n = n_eigenvectors
         self.lambda_color = lambda_color
         self.device = device
-
+        self.downsampling_factor = 4
 
     def forward(self, img):
         w, h = img.shape[2], img.shape[3]
         w_map, h_map = img.shape[2]//16, img.shape[3]//16
         with torch.inference_mode():
             attentions = forward_dino_v1(self.model,img).squeeze(0)
-        attentions = attentions[1:] #remove cls token, shape is (h_featmap*w_featmap, D)
-        attentions = attentions.permute(1,0) # (D,h_featmap*w_featmap)
-        attentions = attentions.reshape(attentions.shape[0],h_map,w_map).unsqueeze(0) # (1,D,h_featmap,w_featmap)
-        attentions = nn.functional.interpolate(attentions,size=(2*h_map,2*w_map),mode="bilinear")
-        attentions = attentions.squeeze(0).reshape(attentions.shape[1],-1)
-        attentions = attentions.permute(1,0) # (2*h_featmap*2*w_featmap,D)
-        feature_similarity = (attentions @ attentions.T)/(torch.norm(attentions,dim=1).unsqueeze(1) @ torch.norm(attentions,dim=1).unsqueeze(0))
-        
-        # keep only the positive values
-        feature_similarity = feature_similarity * (feature_similarity>0)
-        #downscale the image to calculate the color affinity matrix, should be (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
-        img = nn.functional.interpolate(img,size=(2*h_map,2*w_map),mode="bilinear")
-        img = img.squeeze(0).permute(1,2,0).detach().cpu().numpy()
-        img = ((img-img.min())/(img.max()-img.min()))*255
-        img = img.astype(np.uint8) 
-        color_affinity = knn_affinity(img) # is a numpy array
-        #color_affinity = torch.tensor(color_affinity,dtype=torch.float32)
-        color_affinity = color_affinity.to(self.device)
-        similarity = feature_similarity + self.lambda_color*color_affinity
-        D = torch.diag(torch.sum(similarity,dim=1))
-        # do not normalize the laplacian matrix because the eigenvalues are very small
-        L = D - similarity # L is (2*h_featmap*2*w_featmap,2*h_featmap*2*w_featmap)
+            attentions = attentions[1:] #remove cls token, shape is (h_featmap*w_featmap, D)
+            attentions = attentions.permute(1,0) # (D,h_featmap*w_featmap)
+            attentions = attentions.reshape(attentions.shape[0],h_map,w_map).unsqueeze(0) # (1,D,h_featmap,w_featmap)
+            attentions = nn.functional.interpolate(attentions,size=(self.downsampling_factor*h_map,self.downsampling_factor*w_map),mode="bilinear")
+            attentions = attentions.squeeze(0).reshape(attentions.shape[1],-1)
+            attentions = attentions.permute(1,0) # (self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap,D)
+            feature_similarity = (attentions @ attentions.T)/(torch.norm(attentions,dim=1).unsqueeze(1) @ torch.norm(attentions,dim=1).unsqueeze(0))
+            
+            # keep only the positive values
+            feature_similarity = feature_similarity * (feature_similarity>0)
+            #downscale the image to calculate the color affinity matrix, should be (self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap,self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap)
+            img = nn.functional.interpolate(img,size=(self.downsampling_factor*h_map,self.downsampling_factor*w_map),mode="bilinear")
+            img = img.squeeze(0).permute(1,2,0).detach().cpu().numpy()
+            img = ((img-img.min())/(img.max()-img.min()))*255
+            img = img.astype(np.uint8) 
+            color_affinity = knn_affinity(img) # is a numpy array
+            #color_affinity = torch.tensor(color_affinity,dtype=torch.float32)
+            color_affinity = color_affinity.to(self.device)
+            similarity = feature_similarity + self.lambda_color*color_affinity
+            D = torch.diag(torch.sum(similarity,dim=1))
+            # do not normalize the laplacian matrix because the eigenvalues are very small
+            L = D - similarity # L is (self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap,self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap)
+        L = L.detach().cpu()
         eigenvalues, eigenvectors = torch.linalg.eigh(L)
         # do not keep the first eigenvalue and eigenvector because they are constant
         eigenvalues, eigenvectors = eigenvalues[1:], eigenvectors[:,1:] 
@@ -103,8 +109,8 @@ class DSM(nn.Module):
                 eigenvectors[:,i] = -eigenvectors[:,i]
         
         eigenvectors = eigenvectors[:,:self.n]
-        eigenvectors = eigenvectors.reshape(2*h_map,2*w_map,self.n) # (2*h_map,2*w_map,self.n)
-        eigenvectors = eigenvectors.permute(2,0,1) # (self.n,2*h_map,2*w_map)
+        eigenvectors = eigenvectors.reshape(self.downsampling_factor*h_map,self.downsampling_factor*w_map,self.n) # (self.downsampling_factor*h_map,self.downsampling_factor*w_map,self.n)
+        eigenvectors = eigenvectors.permute(2,0,1) # (self.n,self.downsampling_factor*h_map,self.downsampling_factor*w_map)
         eigenvectors = eigenvectors.detach().cpu().numpy()
 
         temp = []
