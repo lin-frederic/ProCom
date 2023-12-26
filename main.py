@@ -7,7 +7,7 @@ from tools import ResizeModulo
 from torchvision import transforms as T
 from tqdm import tqdm
 import numpy as np
-from models.maskBlocks import Identity, Lost, DeepSpectralMethods, SAM, combine_masks, filter_masks
+from models.maskBlocks import Identity, DeepSpectralMethods, SAM, combine_masks, filter_masks
 from uuid import uuid4
 from augment.augmentations import crop_mask
 from tools import PadAndResize
@@ -15,6 +15,11 @@ from PIL import Image
 import os
 import json
 import wandb
+
+from models.DSM_SAM import DSM_SAM
+from model import get_sam_model
+from segment_anything import SamPredictor
+from models.deepSpectralMethods import DSM
 
 def baseline(cfg):
     sampler = DatasetBuilder(cfg)
@@ -107,7 +112,100 @@ def baseline(cfg):
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))   
     print("All accuracies: ", np.round(L_acc,2))
 
+def hierarchical_main(cfg):
+    sampler = DatasetBuilder(cfg)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    model = get_model(size="s",use_v2=False).to(device)
+
+    dsm_model = DSM(model=model, n_eigenvectors=5) # same model as the one used for the classification
+    dsm_model.to(device)
+
+    sam = get_sam_model(size="b").to(device)    
+
+    sam_model = SamPredictor(sam)
+    
+    hierarchical = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
+
+    resize = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
+
+    transforms = T.Compose([
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
+            T.Normalize(mean=[0.485,0.456,0.406],
+                        std=[0.229,0.224,0.225]) # imagenet mean and std
+        ])
+    
+    dataset = cfg.dataset
+
+    L_acc = []
+    ncm = NCM()
+
+    pbar = tqdm(range(cfg.n_runs), desc="Runs")
+
+    for episode_idx in pbar:
+        
+        episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
+        sample = episode[dataset] 
+
+        support_images, temp_support_labels, query_images, temp_query_labels = sample
+
+        support_augmented_imgs = []
+        support_labels = []
+
+        for i, img_path in enumerate(support_images):
+            img = resize(Image.open(img_path).convert("RGB"))
+            masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
+
+            masks = masks.detach().cpu().numpy()
+            #masks = masks[:cfg.top_k_masks]
+            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.2) for mask in masks]
+            labels = [(temp_support_labels[i], i) for j in range(len(masks))]
+            support_labels += labels
+        
+        query_augmented_imgs = []
+        query_labels = []
+
+        for i, img_path in enumerate(query_images):
+            img = resize(Image.open(img_path).convert("RGB"))
+            masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
+
+            masks = masks.detach().cpu().numpy()
+            #masks = masks[:cfg.top_k_masks]
+            query_augmented_imgs += [crop_mask(img, mask, dezoom=0.2) for mask in masks]
+            labels = [(temp_query_labels[i], i) for j in range(len(masks))]
+            query_labels += labels
+
+        support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
+        query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
+
+
+        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector
+        query_tensor = torch.zeros((len(query_augmented_imgs), 384))
+
+        with torch.inference_mode():
+            for i in range(len(support_augmented_imgs)):
+                inputs = support_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                support_tensor[i] = outputs
+
+            for i in range(len(query_augmented_imgs)):
+                inputs = query_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                query_tensor[i] = outputs
+
+        acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
+
+        L_acc.append(acc)
+        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+            
+    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
+    print("All accuracies: ", np.round(L_acc,2))
+        
 
 
 def main(cfg):
@@ -282,7 +380,7 @@ if __name__ == "__main__":
     
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--type", "-t", type=str, default="baseline", help="baseline, nosam, main")
+    parser.add_argument("--type", "-t", type=str, default="baseline", help="baseline, main, hierarchical")
     parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
     parser.add_argument("--dataset", "-d", type=str, default="imagenet", help="imagenet, cub, caltech, food, cifarfs, fungi, flowers, pets")
     args = parser.parse_args()
@@ -299,5 +397,11 @@ if __name__ == "__main__":
     if args.type == "baseline":
         baseline(cfg)
 
+    elif args.type == "hierarchical":
+        hierarchical_main(cfg)
+
     elif args.type == "main":
         main(cfg)
+
+    else:
+        raise ValueError(f"Unknown type of experiment: {args.type}")
