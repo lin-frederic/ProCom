@@ -1,11 +1,11 @@
 import torch
 
 import matplotlib.pyplot as plt
+# solve import error
 import sys
 import os
 path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if path not in sys.path:
-    sys.path.append(path)
+if path not in sys.path:sys.path.append(path)
 from dataset import EpisodicSampler, FolderExplorer
 from model import get_model, forward_dino_v1
 from config import cfg
@@ -18,6 +18,9 @@ from torchvision import transforms
 import torch.nn as nn
 import cv2
 from tqdm import tqdm
+from tools import ResizeModulo
+
+from scipy.ndimage import center_of_mass # find the baricenter of the image
 
 def knn_affinity(image, n_neighbors=[20, 10], distance_weights=[2.0, 0.1]): # magie noire
     """Computes a KNN-based affinity matrix. Note that this function requires pymatting"""
@@ -63,17 +66,21 @@ class DSM(nn.Module):
     def __init__(self, model=None, n_eigenvectors=5,lambda_color=10,device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         super().__init__()
         if model is None:
+            print("Instantiating a new model: DINO with ViT-Small")
             self.model = get_model(size="s",use_v2=False)
         else:
             self.model = model
         self.n = n_eigenvectors
         self.lambda_color = lambda_color
         self.device = device
-        self.downsampling_factor = 4
+        self.downsampling_factor = 4 # match the downsampling factor of the paper with patch size 16
+        self.has_map = False
 
     def forward(self, img):
-        w, h = img.shape[2], img.shape[3]
-        w_map, h_map = img.shape[2]//16, img.shape[3]//16
+        assert len(img.shape) == 4, "The input must be a batch of images" 
+
+        h, w = img.shape[2], img.shape[3]
+        h_map, w_map = img.shape[2]//16, img.shape[3]//16
         with torch.inference_mode():
             attentions = forward_dino_v1(self.model,img).squeeze(0)
             attentions = attentions[1:] #remove cls token, shape is (h_featmap*w_featmap, D)
@@ -98,7 +105,7 @@ class DSM(nn.Module):
             D = torch.diag(torch.sum(similarity,dim=1))
             # do not normalize the laplacian matrix because the eigenvalues are very small
             L = D - similarity # L is (self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap,self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap)
-        L = L.detach().cpu()
+        L = L.detach().cpu() # faster to do it on cpu (non parallelizable)
         eigenvalues, eigenvectors = torch.linalg.eigh(L)
         # do not keep the first eigenvalue and eigenvector because they are constant
         eigenvalues, eigenvectors = eigenvalues[1:], eigenvectors[:,1:] 
@@ -118,7 +125,7 @@ class DSM(nn.Module):
             vector = ((vector-vector.min())/(vector.max()-vector.min()))*255 # normalize between 0 and 255 to have a grayscale image
          
             temp.append(cv2.resize(vector.astype(np.uint8), 
-                                            (w,h), 
+                                dsize=(w,h),
                                             interpolation=cv2.INTER_NEAREST)) # resize to original image size
             
 
@@ -127,45 +134,124 @@ class DSM(nn.Module):
 
         return eigenvectors
      
+    def set_map(self, img):
+        self.og_shape = img.shape
+        self.map = self.forward(img) # (self.n,h,w)
+        self.has_map = True
+        return self.map
+
+    def sample_from_maps(self, sample_per_map=1, temperature=255*0.1):
+
+        def get_point(density_map, target_size):
+            """Sample a point (1) from a density map to a target size (of the original image)"""
+            assert abs(np.sum(density_map) - 1) < 1e-3, f"The density map must be normalized, got {np.sum(density_map)}"
+
+            H,W = density_map.shape[0], density_map.shape[1]
+            h,w = target_size[2], target_size[3]
+
+            density = density_map.reshape(-1)
+
+            density = density / np.sum(density) # normalize
+
+            cum_density = np.cumsum(density, axis=0)
+
+            u = np.random.rand()
+
+            idx = np.searchsorted(cum_density, u)
+
+            (y,x) = np.unravel_index(idx, (H,W))
+
+            x = int(x * h / H)
+            y = int(y * w / W)
+
+            return (x,y)
+
+
         
+        """Sample n_samples images from the eigenvectors maps"""
+        assert self.has_map, "You need to call set_map before sampling"
         
+        res = np.zeros((self.n, sample_per_map, 2), dtype=np.int32) # (n, sample_per_map, 2)
+
+        for i in range(self.n):
+            density_map = softmax_2d(self.map[i], temperature=temperature)
+            for j in range(sample_per_map):
+                res[i,j] = get_point(density_map, self.og_shape)
+        
+        return res
+
+    
+        
+def softmax_2d(x, temperature=1.0):
+    """Compute the softmax of matrix x in a numerically stable way."""
+    temp = x.reshape(-1) / temperature
+    temp = temp - np.max(temp) # shift to avoid overflow
+    exp_x = np.exp(temp) 
+    softmax_x = exp_x / np.sum(exp_x)
+    softmax_x = softmax_x.reshape(x.shape)
+    return softmax_x
 
 
 if __name__ == "__main__":
+    if not os.path.exists("temp_dsm"):
+        os.mkdir("temp_dsm")
     folder_explorer = FolderExplorer(cfg.paths)
     paths = folder_explorer()
     sampler = EpisodicSampler(paths = paths,
                             n_query= cfg.sampler.n_queries,
                             n_ways = cfg.sampler.n_ways,
-                            n_shot = cfg.sampler.n_shots)
-    dsm = DSM() # default parameters are model=None, n_eigenvectors=5
+                            n_shot = cfg.sampler.n_shots,)
+    dsm = DSM(lambda_color=10)
     dsm.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dsm.to(device)
     # dataset
-    episode = sampler()
+    episode = sampler(seed_classes=42, seed_images=42)
     imagenet_sample = episode["imagenet"]
     # support set
     support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
+    support_images.append("images/manchot_banane_small.png")
     for image_path in tqdm(support_images):
         image = Image.open(image_path).convert("RGB")
-        image = image.resize((224,224))
+        image = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(image)
         image_tensor = transforms.ToTensor()(image)
         image_tensor = transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                     std=[0.229, 0.224, 0.225])(image_tensor)
         image_tensor = image_tensor.unsqueeze(0)
         image_tensor = image_tensor.to(device)
-        eigenvectors = dsm(image_tensor)
+        eigenvectors = dsm.set_map(image_tensor) # (n,h,w) (instead of forward(image_tensor)
         # save the plot of the eigenvectors side by side for each image and save it
-        fig, axs = plt.subplots(1, eigenvectors.shape[0], figsize=(15,15))
-        for i,ax in enumerate(axs):
+        fig, axs = plt.subplots(3, eigenvectors.shape[0], figsize=(15,15))
+
+        # eigenvectors        
+        for i,ax in enumerate(axs[0]):
             ax.imshow(eigenvectors[i],cmap="viridis")
+            
+            rescaled = softmax_2d(eigenvectors[i], temperature=0.1)
+
+            baricenter = center_of_mass(rescaled)
+
+            ax.scatter(baricenter[1],baricenter[0],c="red")
             ax.axis("off")
-        plt.savefig(f"temp/eigenvectors_{image_path.split('/')[-1]}")
+
+        # thresholded eigenvectors 
+        for i,ax in enumerate(axs[1]):
+            thr, mask = cv2.threshold(eigenvectors[i],0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            ax.imshow(mask,cmap="viridis")
+            ax.axis("off")
+
+        # sample points on the original image
+            
+        sample_points = dsm.sample_from_maps(sample_per_map=3, temperature=255*0.01)
+            
+        for i,ax in enumerate(axs[2]):
+            
+            ax.imshow(image)
+            for point in sample_points[i]:
+                ax.scatter(point[0],point[1],c="red")
+
+
+        plt.savefig(f"temp_dsm/eigenvectors_{image_path.split('/')[-1]}")
         plt.close()
-        #also save the plot of the original image
-        plt.imshow(image)
-        plt.axis("off")
-        plt.savefig(f"temp/original_{image_path.split('/')[-1]}")
-        plt.close()
+
         

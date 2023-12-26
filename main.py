@@ -121,7 +121,7 @@ def main(cfg):
     resize = T.Resize((224,224))
 
     transforms = T.Compose([
-            ResizeModulo(patch_size=16, target_size=224),
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])

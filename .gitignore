@@ -5,6 +5,7 @@ test.ipynb
 *.ipynb
 .ipynb_checkpoints/
 temp/
+temp_dsm/
 
 wandb/
 cache/

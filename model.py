@@ -7,6 +7,8 @@ import numpy as np
 from scipy.ndimage import center_of_mass
 import matplotlib.pyplot as plt
 
+from segment_anything import sam_model_registry
+
 
 load_refs = {
     "s":"dinov2_vits14",
@@ -103,8 +105,23 @@ def get_seed_from_attn(attn_map):
     barycenter = (int(barycenter[0]), int(barycenter[1]))
     
     return torch.Tensor(np.ravel(barycenter))
-         
-    
+
+
+def get_sam_model(size="b"):
+    if size == "s":
+        print("SAM model is not available for size s, using size b instead")
+        size = "b"
+        
+    sizes = {
+            "b" : "sam_vit_b_01ec64.pth",
+            "l" : "sam_vit_l_0b3195.pth",
+            "h" : "sam_vit_h_4b8939.pth",
+        }
+
+    print(f"Loading SAM model for size {size}")
+
+    sam = sam_model_registry[f"vit_{size}"](checkpoint=f"/nasbrain/f21lin/{sizes[size]}")
+    return sam
     
 def main():
     model = get_model(size="s",use_v2=False)

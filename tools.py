@@ -45,6 +45,17 @@ def iou(maskA, maskB):
     iou_score = np.sum(intersection) / np.sum(union)
     return iou_score
 
+def iou_torch(maskA, maskB):
+    # maskA and maskB are (H,W) torch tensors
+    assert maskA.shape == maskB.shape
+    # convert to boolean
+    maskA = (maskA>0).flatten()
+    maskB = (maskB>0).flatten()
+    intersection = torch.logical_and(maskA, maskB)
+    union = torch.logical_or(maskA, maskB)
+    iou_score = torch.sum(intersection) / (torch.sum(union)+1e-6)
+    return iou_score
+
 # 2 segmentation losses that could be used as a replacement for IoU
 
 def focal_loss(inputs : np.ndarray,targets : np.ndarray, alpha : float = 1., gamma : float = 2.):
@@ -77,6 +88,20 @@ def dice_loss(inputs : np.ndarray,targets : np.ndarray, smooth : float = 1.):
     loss = (2. * intersection + smooth) / (union + smooth)
     
     return 1 - loss
+
+def dice_torch(inputs : torch.Tensor,targets : torch.Tensor, smooth : float = 1.):
+    # inputs and targets are torch tensors of the same shape    
+    inputs = inputs.flatten()
+    targets = targets.flatten()
+
+    
+    intersection = torch.sum(inputs * targets)
+    union = torch.sum(inputs) + torch.sum(targets)
+    
+    dice = (2. * intersection + smooth) / (union + smooth)
+    
+    return 1 - dice
+
     
 
 class PadAndResize(nn.Module):
@@ -144,18 +169,19 @@ class ResizeModulo(nn.Module):
     Args:
         image (PIL image): image to resize (RGB)
     Returns:
-        tensor: tensor of shape (3, H, W)
+        tensor: tensor of shape (3, H, W) or image of size (H, W)
         where H and W are the closest multiples of patch_size and 
         the longest side is the closest to target_size
     """
-    def __init__(self, patch_size=16, target_size=224) -> None:
+    def __init__(self, patch_size=16, target_size=224, tensor_out=False) -> None:
         assert isinstance(patch_size, int) and patch_size > 0, "patch_size should be a positive int"
         assert isinstance(target_size, int) and target_size > 0, "target_size should be a positive int"
             
         self.patch_size = patch_size
         self.target_size = target_size
+        self.tensor_out = tensor_out
         self.to_tensor = T.ToTensor()
-    def __call__(self, image: Image):
+    def __call__(self, image: Image,):
         # image is a PIL image
         w, h = image.size
         
@@ -171,7 +197,9 @@ class ResizeModulo(nn.Module):
         image = F.resize(image, (new_h,new_w))
         
         # convert to tensor
-        image = self.to_tensor(image)
+        if self.tensor_out:
+            image = self.to_tensor(image)
+
         
         return image
 
