@@ -124,7 +124,12 @@ class DSM_SAM():
         for i, (trimask, triquality) in enumerate(zip(masks, qualities)):
             # trimask: (3, H, W)
             idx = i//sample_per_map # eigen map index
-            coarse_ref_mask = torch.from_numpy(eigen_maps[idx]).to("cuda") # (H, W)
+
+            numpy_ref_mask = eigen_maps[idx].astype(np.uint8) # (H, W)
+            _, numpy_ref_mask = cv2.threshold(numpy_ref_mask, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+
+
+            coarse_ref_mask = torch.from_numpy(numpy_ref_mask).to("cuda") # (H, W)
 
             # compute metrics
 
