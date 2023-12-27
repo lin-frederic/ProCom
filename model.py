@@ -7,8 +7,9 @@ import numpy as np
 from scipy.ndimage import center_of_mass
 import matplotlib.pyplot as plt
 
-from segment_anything import sam_model_registry
-
+from segment_anything import sam_model_registry, SamPredictor
+import json
+import os
 
 load_refs = {
     "s":"dinov2_vits14",
@@ -49,6 +50,58 @@ def forward_dino_v1(model, x):
 
 # for dinov2, pass the is_training = True flag
 
+class CachedSamPredictor(SamPredictor):
+    def __init__(self,
+                 path_to_cache: str,
+                 json_cache: str,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.path_to_cache = path_to_cache
+        self.json_cache = json_cache
+
+        if not os.path.exists(self.path_to_cache):
+            os.makedirs(self.path_to_cache)
+
+        if not os.path.exists(self.json_cache):
+            print(f"Creating json cache at {self.json_cache}")
+            with open(self.json_cache, "w") as f:
+                json.dump({}, f)
+
+        with open(json_cache, "r") as f:
+            self.cache = json.load(f)
+        
+    def set_image_cache(self, image_path, image):
+        
+        if "/" in image_path:
+            image_name = image_path.split("/")[-1]
+        else:
+            image_name = image_path
+
+
+        if image_name in self.cache:
+            x = torch.load(f"{self.cache[image_name]}.pt")
+            self.original_size = x["original_size"]
+            self.input_size = x["input_size"]
+            self.features = x["features"]
+            self.is_image_set = True
+        else:
+            if isinstance(image, Image.Image):
+                image = np.array(image)
+            elif isinstance(image, np.ndarray):
+                pass
+            else:
+                raise ValueError(f"image must be a PIL image or a numpy array, got {type(image)}")
+            
+            self.set_image(image)
+            to_save = {
+                "original_size":self.original_size,
+                "input_size":self.input_size,
+                "features":self.features
+            }
+            torch.save(to_save, f"{os.path.join(self.path_to_cache, image_name)}.pt")
+            self.cache[image_path] = os.path.join(self.path_to_cache, image_name)
+            with open(self.json_cache, "w") as f:
+                json.dump(self.cache, f)
 
 def show_attn(model, x, is_v2=False):
     if is_v2:

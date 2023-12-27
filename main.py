@@ -17,7 +17,7 @@ import json
 import wandb
 
 from models.DSM_SAM import DSM_SAM
-from model import get_sam_model
+from model import get_sam_model, CachedSamPredictor
 from segment_anything import SamPredictor
 from models.deepSpectralMethods import DSM
 
@@ -121,7 +121,9 @@ def hierarchical_main(cfg):
 
     sam = get_sam_model(size="b").to(device)    
 
-    sam_model = SamPredictor(sam)
+    sam_model = CachedSamPredictor(sam_model = sam, 
+                                   path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
+                                   json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
     
     hierarchical = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
 
@@ -152,14 +154,17 @@ def hierarchical_main(cfg):
 
         for i, img_path in enumerate(support_images):
             img = resize(Image.open(img_path).convert("RGB"))
-            masks, _ = hierarchical(img, sample_per_map=3, temperature=255*0.07)
+            masks, _ = hierarchical(img = img, 
+                                    path_to_img=img_path,
+                                    sample_per_map=3, 
+                                    temperature=255*0.07)
 
             masks = masks.detach().cpu().numpy()
             #add the identity mask
             
             masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.3) for mask in masks]
+            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
         
@@ -168,13 +173,16 @@ def hierarchical_main(cfg):
 
         for i, img_path in enumerate(query_images):
             img = resize(Image.open(img_path).convert("RGB"))
-            masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
+            masks, _ = hierarchical.forward(img = img, 
+                                            path_to_img=img_path,
+                                            sample_per_map=3, 
+                                            temperature=255*0.07)
 
             masks = masks.detach().cpu().numpy()
             #add the identity mask
             masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            query_augmented_imgs += [crop_mask(img, mask, dezoom=0.3) for mask in masks]
+            query_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
 
@@ -182,7 +190,7 @@ def hierarchical_main(cfg):
         query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
 
 
-        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector
+        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector WARNING: hardcoded
         query_tensor = torch.zeros((len(query_augmented_imgs), 384))
 
         with torch.inference_mode():
