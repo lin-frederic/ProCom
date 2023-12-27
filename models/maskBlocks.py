@@ -194,8 +194,8 @@ def filter_masks(masks_sam, reference_masks,norm=True, postprocess=True):
     we want to keep the masks from SAM that are the most similar to the reference_masks
     based on the dice loss"""
     if postprocess is True:
-        postprocess_area(reference_masks, threshold=0.5)
-        postprocess_area(masks_sam, threshold=0.5)
+        postprocess_area(reference_masks, threshold=0.7)
+        postprocess_area(masks_sam, threshold=0.7)
     losses = np.zeros((len(masks_sam), len(reference_masks), 2)) # 2 losses : focal and dice
     for i in range(len(reference_masks)):
         for j in range(len(masks_sam)):

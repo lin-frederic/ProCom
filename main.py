@@ -29,10 +29,10 @@ def baseline(cfg):
     model.to(device)
     model.eval()
 
-    resize = T.Resize((224,224))
+    resize = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
 
     transforms = T.Compose([
-            PadAndResize(224),
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
@@ -84,21 +84,19 @@ def baseline(cfg):
 
         support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector
         query_tensor = torch.zeros((len(query_augmented_imgs), 384))
-
-        bs = cfg.batch_size
         
         with torch.inference_mode():
-            for i in range(0, len(support_augmented_imgs), bs):
-                inputs = torch.stack(support_augmented_imgs[i:i+bs])
-                outputs = model(inputs)
-                support_tensor[i:i+bs] = outputs
+            for i in range(0, len(support_augmented_imgs)):
+                inputs = support_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                support_tensor[i] = outputs
 
-            for i in range(0, len(query_augmented_imgs), bs):
-                inputs = torch.stack(query_augmented_imgs[i:i+bs])
-                outputs = model(inputs)
-                query_tensor[i:i+bs] = outputs
+            for i in range(0, len(query_augmented_imgs)):
+                inputs = query_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                query_tensor[i] = outputs
 
-        acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
+        acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
 
         L_acc.append(acc)
 
@@ -157,8 +155,11 @@ def hierarchical_main(cfg):
             masks, _ = hierarchical(img, sample_per_map=3, temperature=255*0.07)
 
             masks = masks.detach().cpu().numpy()
+            #add the identity mask
+            
+            masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
+            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.3) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
         
@@ -170,8 +171,10 @@ def hierarchical_main(cfg):
             masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
 
             masks = masks.detach().cpu().numpy()
+            #add the identity mask
+            masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            query_augmented_imgs += [crop_mask(img, mask, dezoom=0.2) for mask in masks]
+            query_augmented_imgs += [crop_mask(img, mask, dezoom=0.3) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
 
@@ -193,7 +196,7 @@ def hierarchical_main(cfg):
                 outputs = model(inputs).squeeze(0)
                 query_tensor[i] = outputs
 
-        acc = ncm(support_tensor, query_tensor, support_labels, query_labels)
+        acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
 
         L_acc.append(acc)
         pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
