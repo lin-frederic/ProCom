@@ -31,7 +31,9 @@ import time
 class DSM_SAM():
     def __init__(self, dsm_model: DSM, 
                  sam_model: CachedSamPredictor,
-                 nms_thr=0.5):
+                 nms_thr=0.5,
+                 area_thr=0.05 # under this threshold, the mask is discarded
+                 ):
         super().__init__()
         self.dsm_model = dsm_model
         self.sam_predictor = sam_model
@@ -41,6 +43,7 @@ class DSM_SAM():
                          std=[0.229, 0.224, 0.225])])
 
         self.nms_thr = nms_thr
+        self.area_thr = area_thr
 
     def get_metric(self, ref_mask, pred_mask, metric="iou"):
         assert len(ref_mask.shape) == 2, "unbatch ref_mask"
@@ -62,7 +65,7 @@ class DSM_SAM():
             raise NotImplementedError(f"Metric {metric} is not implemented")
         
 
-    def nms(self, masks, qualities, threshold=0.5, metric="iou"):
+    def nms(self, masks, qualities, threshold, metric="iou"):
         # masks: (n_masks, H, W)
         # qualities: (n_masks)
         # threshold: threshold for NMS
@@ -84,11 +87,20 @@ class DSM_SAM():
             if all([iou < threshold for iou in ious]):
                 kept_masks.append(mask)
                 kept_idx.append(i)
+
+        final_masks = []
+        final_idx = []
+
+        for mask, idx in zip(kept_masks, kept_idx):
+            # filter masks that are too small and keep at least one mask
+            if mask.sum() > self.area_thr * mask.shape[0] * mask.shape[1] or len(final_masks) == 0:
+                final_masks.append(mask)
+                final_idx.append(idx)
         
-        return torch.stack(kept_masks), torch.Tensor(kept_idx).long()
+        return torch.stack(final_masks), torch.Tensor(final_idx).long()
         
 
-    def forward(self, img, path_to_img, sample_per_map=10, temperature=255*0.1):
+    def forward(self, img, path_to_img, sample_per_map=10, temperature=255*0.1, use_cache=False):
         # img is a PIL image
 
         # prepare for DSM
@@ -100,7 +112,15 @@ class DSM_SAM():
         eigen_maps = self.dsm_model.set_map(img_tensor) # returns numpy array (n_eigen_maps, H, W)
 
         # compute embeddings for the resized image
-        self.sam_predictor.set_image_cache(path_to_img, img)
+        if use_cache:
+            self.sam_predictor.set_image_cache(path_to_img, img)
+        else:
+            if isinstance(img, Image.Image):
+                self.sam_predictor.set_image(np.array(img))
+            elif isinstance(img, np.ndarray):
+                self.sam_predictor.set_image(img)
+            else:
+                raise TypeError(f"img must be a PIL image or a numpy array, got {type(img)}")
 
         # sample points from eigen maps
         sample_points = self.dsm_model.sample_from_maps(sample_per_map=sample_per_map, temperature=temperature) # (n_eigen_maps, n_samples, 2)
@@ -139,7 +159,8 @@ class DSM_SAM():
 
             metrics = [self.get_metric(coarse_ref_mask, 
                                     mask, metric="iou") for mask in trimask]
-
+            #[1:] 
+            # 0 is the smallest mask, uncomment to discard it
 
             # keep the best one
             best_idx = torch.argmax(torch.Tensor(metrics)).item()
@@ -161,24 +182,26 @@ class DSM_SAM():
                  img, 
                  path_to_img,
                  sample_per_map=10, 
-                 temperature=255*0.1):
-        return self.forward(img, path_to_img, sample_per_map, temperature)
+                 temperature=255*0.1,
+                 use_cache=False):
+        return self.forward(img, path_to_img, sample_per_map, temperature, use_cache)
     
 
 def main():
-    dsm_model = DSM(n_eigenvectors=5)
+    dsm_model = DSM(n_eigenvectors=5, lambda_color=2)
     dsm_model.to("cuda")
 
     sam = get_sam_model(size="b").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1)
 
     dataset = DatasetBuilder(cfg=cfg,)
-    support_images, support_labels, query_images, query_labels = dataset(seed_classes=0, seed_images=0)["imagenet"]
 
-    print(len(support_images))
+    seed = 0
+
+    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["imagenet"]
 
     start = time.time()
     for img_name in support_images:
@@ -187,31 +210,28 @@ def main():
         resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
         masks,points = model(resized_img, img_name,
-                             sample_per_map=1, temperature=255*0.1)
+                             sample_per_map=10, 
+                             temperature=255*0.1)
 
-        """lim = min(10, len(masks))
-        fig, ax = plt.subplots(1, lim, )
+        lim = min(10, len(masks))
+        fig, ax = plt.subplots(1, lim+1)
+        ax[0].imshow(img)
+        ax[0].axis("off")
+
         for i, mask in enumerate(masks[:lim]):
-            ax[i].imshow(mask.detach().cpu().numpy())
-            ax[i].scatter(points[i,0,0].item(), points[i,0,1].item(), marker="x", color="red")
-            ax[i].axis("off")
+            ax[i+1].imshow(mask.detach().cpu().numpy())
+            ax[i+1].scatter(points[i,0,0].item(), points[i,0,1].item(), marker="x", color="red")
+            ax[i+1].axis("off")
+            area = mask.sum().item()
+            area_t = mask.shape[0] * mask.shape[1]
+            ax[i+1].set_title(f"{area/area_t:.2f}")
 
         plt.tight_layout()
 
-        plt.savefig("temp/DSM_SAM.png")
-        plt.close()"""
+        plt.savefig(f"temp/{img_name.split('/')[-1]}.png")
+        plt.close()
     end = time.time()
-    print(f"Time: {end-start}s")
-
-    for img_name in support_images:
-        img = Image.open(img_name).convert("RGB")
-        # resize to a multiple of 16
-        resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
-
-        masks,points = model(resized_img, img_name,
-                             sample_per_map=1, temperature=255*0.1)
-        
-    print(f"time2 {time.time()-end}s")
+    print(f"Time: {end-start:.3f}s")
 
 
 if __name__ == "__main__":
