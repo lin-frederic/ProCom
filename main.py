@@ -209,8 +209,73 @@ def hierarchical_main(cfg):
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
         
-
-
+def main_seed(cfg, seed): # reproduce a run with a specific seed
+    # this is used to visualize the matching between the masks in the ncm
+    sampler = DatasetBuilder(cfg)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = get_model(size="s",use_v2=False)
+    model.to(device)
+    dsm_model = DSM(model=model, n_eigenvectors=5) # same model as the one used for the classification
+    dsm_model.to(device)
+    sam = get_sam_model(size="b").to(device)
+    sam_model = SamPredictor(sam)
+    hierarchical = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
+    resize = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
+    transforms = T.Compose([
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
+            T.Normalize(mean=[0.485,0.456,0.406],
+                        std=[0.229,0.224,0.225]) # imagenet mean and std
+        ])
+    dataset = cfg.dataset
+    ncm = NCM()
+    episode = sampler(seed_classes=seed, seed_images=seed)
+    sample = episode[dataset]
+    support_images, temp_support_labels, query_images, temp_query_labels = sample
+    support_augmented_imgs = []
+    support_labels = []
+    for i, img_path in enumerate(tqdm(support_images)):
+        img = resize(Image.open(img_path).convert("RGB"))
+        masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
+        masks = masks.detach().cpu().numpy()
+        #add the identity mask
+        masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
+        #masks = masks[:cfg.top_k_masks]
+        support_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
+        labels = [(temp_support_labels[i], i) for j in range(len(masks))]
+        support_labels += labels
+    query_augmented_imgs = []
+    query_labels = []
+    for i, img_path in enumerate(tqdm(query_images)):
+        img = resize(Image.open(img_path).convert("RGB"))
+        masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
+        masks = masks.detach().cpu().numpy()
+        #add the identity mask
+        masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
+        #masks = masks[:cfg.top_k_masks]
+        query_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
+        labels = [(temp_query_labels[i], i) for j in range(len(masks))]
+        query_labels += labels
+    support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
+    query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
+    support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector
+    query_tensor = torch.zeros((len(query_augmented_imgs), 384))
+    with torch.inference_mode():
+        for i in tqdm(range(len(support_augmented_imgs))):
+            inputs = support_augmented_imgs[i].unsqueeze(0)
+            outputs = model(inputs).squeeze(0)
+            support_tensor[i] = outputs
+        for i in tqdm(range(len(query_augmented_imgs))):
+            inputs = query_augmented_imgs[i].unsqueeze(0)
+            outputs = model(inputs).squeeze(0)
+            query_tensor[i] = outputs
+    # convert augmented images to plottable images
+    support_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in support_augmented_imgs]
+    query_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in query_augmented_imgs]
+    # support_augmented_imgs and query_augmented_imgs are lists of masked images
+    # support images and query images are lists of original images
+    to_display = [support_augmented_imgs, query_augmented_imgs]
+    acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True,to_display=to_display)
+    print("Accuracy: ", round(acc,2))
 def main(cfg):
     sampler = DatasetBuilder(cfg)
     
@@ -386,6 +451,7 @@ if __name__ == "__main__":
     parser.add_argument("--type", "-t", type=str, default="baseline", help="baseline, main, hierarchical")
     parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
     parser.add_argument("--dataset", "-d", type=str, default="imagenet", help="imagenet, cub, caltech, food, cifarfs, fungi, flowers, pets")
+    parser.add_argument("--seed", "-s", type=int, default=0, help="seed for the run")
     args = parser.parse_args()
 
     cfg["type"] = args.type
@@ -405,6 +471,8 @@ if __name__ == "__main__":
 
     elif args.type == "main":
         main(cfg)
+    elif args.type == "seed":
+        main_seed(cfg, args.seed)
 
     else:
         raise ValueError(f"Unknown type of experiment: {args.type}")
