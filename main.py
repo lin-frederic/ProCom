@@ -273,8 +273,9 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
     query_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in query_augmented_imgs]
     # support_augmented_imgs and query_augmented_imgs are lists of masked images
     # support images and query images are lists of original images
-    to_display = [support_augmented_imgs, query_augmented_imgs]
+    to_display = [support_augmented_imgs, query_augmented_imgs, support_images, query_images]
     acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True,to_display=to_display)
+        
     print("Accuracy: ", round(acc,2))
 def main(cfg):
     sampler = DatasetBuilder(cfg)

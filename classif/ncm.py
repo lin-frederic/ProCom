@@ -6,6 +6,7 @@ path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if path not in sys.path:sys.path.append(path)
 from tools import preprocess_Features
 import matplotlib.pyplot as plt
+from PIL import Image
 
 class NCM(torch.nn.Module):
     def __init__(self, top_k=1):
@@ -34,7 +35,7 @@ class NCM(torch.nn.Module):
         similarity = similarity.squeeze(1)
         visited = set()
         if to_display is not None:
-            support_augmented_imgs, query_augmented_imgs = to_display          
+            support_augmented_imgs, query_augmented_imgs, support_images, query_images = to_display       
         for i, (query_class, query_index) in enumerate(query_labels):
             #find where the other masks of the same image are
             if query_index not in visited:
@@ -54,21 +55,31 @@ class NCM(torch.nn.Module):
                     #plot the query image and the support image (top 1)
                     #plot the query mask and the support mask (top 1)
                     # set title as correct or not
-                    fig, axs = plt.subplots(1,2)
                     query_img = query_augmented_imgs[indices[top_k_masks[0]]]
+                    original_support_idx = support_labels[top_k_support[0]][1]
+                    original_query_idx = query_labels[indices[top_k_masks[0]]][1]
+                    original_support = support_images[original_support_idx] # path to the original image
+                    original_support = Image.open(original_support).convert('RGB')
+                    original_query = query_images[original_query_idx]
+                    original_query = Image.open(original_query).convert('RGB')
                     support_img = support_augmented_imgs[top_k_support[0]]
-                    query_img = (query_img - query_img.min()) / (query_img.max() - query_img.min())
-                    support_img = (support_img - support_img.min()) / (support_img.max() - support_img.min())
-                    query_img = (query_img * 255).astype('uint8')
-                    support_img = (support_img * 255).astype('uint8')
-                    axs[0].imshow(query_img)
-                    axs[0].axis('off')
-                    axs[1].imshow(support_img)
-                    axs[1].axis('off')
+                    
+                    query_img = preprocess_plot(query_img)
+                    support_img = preprocess_plot(support_img)
+
+                    fig, ax = plt.subplots(2,2)
+                    ax[0,0].imshow(query_img)
+                    ax[0,0].axis('off')
+                    ax[0,1].imshow(support_img)
+                    ax[0,1].axis('off')
+                    ax[1,0].imshow(original_query)
+                    ax[1,0].axis('off')
+                    ax[1,1].imshow(original_support)
+                    ax[1,1].axis('off')
                     if query_class == support_labels[top_k_support[0]][0]:
-                        fig.suptitle("Correct")
+                        plt.title("Correct")
                     else:
-                        fig.suptitle("Incorrect")
+                        plt.title("Incorrect")
                     plt.savefig(f"results/ncm/{query_index}.png")
                     plt.close()
                     
@@ -79,7 +90,10 @@ class NCM(torch.nn.Module):
         acc = acc / len(visited)
         return acc
         
-
+def preprocess_plot(img):
+    img = (img - img.min()) / (img.max() - img.min())
+    img = (img * 255).astype('uint8')
+    return img
 
 
 def test():
