@@ -10,8 +10,8 @@ path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if path not in sys.path:sys.path.append(path)
 
 from models.deepSpectralMethods import DSM
-from segment_anything import SamPredictor
-from model import get_sam_model
+from segment_anything import SamPredictor # non cached version
+from model import get_sam_model, CachedSamPredictor
 
 import torch
 
@@ -26,8 +26,12 @@ from dataset import DatasetBuilder
 import matplotlib.pyplot as plt
 import numpy as np 
 
+import time
+
 class DSM_SAM():
-    def __init__(self, dsm_model: DSM, sam_model: SamPredictor, nms_thr=0.5):
+    def __init__(self, dsm_model: DSM, 
+                 sam_model: CachedSamPredictor,
+                 nms_thr=0.5):
         super().__init__()
         self.dsm_model = dsm_model
         self.sam_predictor = sam_model
@@ -84,7 +88,7 @@ class DSM_SAM():
         return torch.stack(kept_masks), torch.Tensor(kept_idx).long()
         
 
-    def forward(self, img, sample_per_map=10, temperature=255*0.1):
+    def forward(self, img, path_to_img, sample_per_map=10, temperature=255*0.1):
         # img is a PIL image
 
         # prepare for DSM
@@ -96,7 +100,7 @@ class DSM_SAM():
         eigen_maps = self.dsm_model.set_map(img_tensor) # returns numpy array (n_eigen_maps, H, W)
 
         # compute embeddings for the resized image
-        self.sam_predictor.set_image(np.array(img))
+        self.sam_predictor.set_image_cache(path_to_img, img)
 
         # sample points from eigen maps
         sample_points = self.dsm_model.sample_from_maps(sample_per_map=sample_per_map, temperature=temperature) # (n_eigen_maps, n_samples, 2)
@@ -153,8 +157,12 @@ class DSM_SAM():
 
         
     
-    def __call__(self, img, sample_per_map=10, temperature=255*0.1):
-        return self.forward(img, sample_per_map, temperature)
+    def __call__(self, 
+                 img, 
+                 path_to_img,
+                 sample_per_map=10, 
+                 temperature=255*0.1):
+        return self.forward(img, path_to_img, sample_per_map, temperature)
     
 
 def main():
@@ -163,21 +171,25 @@ def main():
 
     sam = get_sam_model(size="b").to("cuda")
 
-    sam_model = SamPredictor(sam)
+    sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
     model = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
 
-    support_images = ["images/manchot_banane_small.png"]
+    dataset = DatasetBuilder(cfg=cfg,)
+    support_images, support_labels, query_images, query_labels = dataset(seed_classes=0, seed_images=0)["imagenet"]
 
+    print(len(support_images))
 
+    start = time.time()
     for img_name in support_images:
         img = Image.open(img_name).convert("RGB")
         # resize to a multiple of 16
         resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
-        masks,points = model(resized_img, sample_per_map=3, temperature=255*0.1)
+        masks,points = model(resized_img, img_name,
+                             sample_per_map=1, temperature=255*0.1)
 
-        lim = min(10, len(masks))
+        """lim = min(10, len(masks))
         fig, ax = plt.subplots(1, lim, )
         for i, mask in enumerate(masks[:lim]):
             ax[i].imshow(mask.detach().cpu().numpy())
@@ -187,6 +199,19 @@ def main():
         plt.tight_layout()
 
         plt.savefig("temp/DSM_SAM.png")
+        plt.close()"""
+    end = time.time()
+    print(f"Time: {end-start}s")
+
+    for img_name in support_images:
+        img = Image.open(img_name).convert("RGB")
+        # resize to a multiple of 16
+        resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
+
+        masks,points = model(resized_img, img_name,
+                             sample_per_map=1, temperature=255*0.1)
+        
+    print(f"time2 {time.time()-end}s")
 
 
 if __name__ == "__main__":
