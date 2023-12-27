@@ -125,7 +125,7 @@ def hierarchical_main(cfg):
                                    path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
                                    json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
     
-    hierarchical = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
+    hierarchical = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.05)
 
     resize = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
 
@@ -156,7 +156,7 @@ def hierarchical_main(cfg):
             img = resize(Image.open(img_path).convert("RGB"))
             masks, _ = hierarchical(img = img, 
                                     path_to_img=img_path,
-                                    sample_per_map=3, 
+                                    sample_per_map=5, 
                                     temperature=255*0.07)
 
             masks = masks.detach().cpu().numpy()
@@ -175,7 +175,7 @@ def hierarchical_main(cfg):
             img = resize(Image.open(img_path).convert("RGB"))
             masks, _ = hierarchical.forward(img = img, 
                                             path_to_img=img_path,
-                                            sample_per_map=3, 
+                                            sample_per_map=5, 
                                             temperature=255*0.07)
 
             masks = masks.detach().cpu().numpy()
