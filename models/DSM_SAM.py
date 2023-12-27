@@ -195,7 +195,7 @@ def main():
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.05)
 
     dataset = DatasetBuilder(cfg=cfg,)
 
