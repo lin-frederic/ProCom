@@ -175,7 +175,7 @@ def main():
         # resize to a multiple of 16
         resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
-        masks,points = model(resized_img, sample_per_map=10, temperature=255*0.1)
+        masks,points = model(resized_img, sample_per_map=3, temperature=255*0.1)
 
         lim = min(10, len(masks))
         fig, ax = plt.subplots(1, lim, )

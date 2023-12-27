@@ -154,11 +154,11 @@ def hierarchical_main(cfg):
 
         for i, img_path in enumerate(support_images):
             img = resize(Image.open(img_path).convert("RGB"))
-            masks, _ = hierarchical(img, sample_per_map=10, temperature=255*0.1)
+            masks, _ = hierarchical(img, sample_per_map=3, temperature=255*0.07)
 
             masks = masks.detach().cpu().numpy()
             #masks = masks[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.2) for mask in masks]
+            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
         
