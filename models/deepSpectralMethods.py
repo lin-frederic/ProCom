@@ -201,12 +201,12 @@ if __name__ == "__main__":
                             n_query= cfg.sampler.n_queries,
                             n_ways = cfg.sampler.n_ways,
                             n_shot = cfg.sampler.n_shots,)
-    dsm = DSM(lambda_color=10)
+    dsm = DSM(lambda_color=1)
     dsm.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dsm.to(device)
     # dataset
-    episode = sampler(seed_classes=42, seed_images=42)
+    episode = sampler(seed_classes=123, seed_images=42)
     imagenet_sample = episode["imagenet"]
     # support set
     support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
@@ -236,13 +236,36 @@ if __name__ == "__main__":
 
         # thresholded eigenvectors 
         for i,ax in enumerate(axs[1]):
-            thr, mask = cv2.threshold(eigenvectors[i],0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            
+            """kernel_s = 3
+            temp = 255 - eigenvectors[i]
+            mask = cv2.adaptiveThreshold(src=temp,
+                                         maxValue=255,
+                                            adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                            thresholdType=cv2.THRESH_BINARY,
+                                            blockSize=kernel_s,
+                                            C=2)
+            mask = 255 - mask
+            # conv2d 
+            mask = scipy.signal.convolve2d(mask, np.ones((kernel_s+2,kernel_s+2)), mode="same")
+            mask = mask > 0
+            mask = scipy.ndimage.binary_fill_holes(mask)    """
+
+            #temp = eigenvectors[i]
+            s = 5
+            temp = scipy.signal.convolve2d(eigenvectors[i], np.ones((s,s)), mode="same")
+            temp = (temp - temp.min())/(temp.max()-temp.min())
+            temp = (255 * temp).astype(np.uint8)
+
+            thr, mask = cv2.threshold(temp, 127, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
             ax.imshow(mask,cmap="viridis")
+            ax.set_title(thr)
             ax.axis("off")
 
         # sample points on the original image
             
-        sample_points = dsm.sample_from_maps(sample_per_map=3, temperature=255*0.01)
+        sample_points = dsm.sample_from_maps(sample_per_map=10, temperature=255*0.07)
             
         for i,ax in enumerate(axs[2]):
             

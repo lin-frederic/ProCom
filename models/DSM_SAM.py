@@ -13,6 +13,9 @@ from models.deepSpectralMethods import DSM
 from segment_anything import SamPredictor # non cached version
 from model import get_sam_model, CachedSamPredictor
 
+from scipy.signal import convolve2d
+from scipy.ndimage import binary_fill_holes
+
 import torch
 
 from torchvision import transforms as T
@@ -28,11 +31,13 @@ import numpy as np
 
 import time
 
+from tqdm import tqdm
+
 class DSM_SAM():
     def __init__(self, dsm_model: DSM, 
                  sam_model: CachedSamPredictor,
                  nms_thr=0.5,
-                 area_thr=0.05 # under this threshold, the mask is discarded
+                 area_thr=0.05, # under this threshold, the mask is discarded
                  ):
         super().__init__()
         self.dsm_model = dsm_model
@@ -64,6 +69,38 @@ class DSM_SAM():
         else:
             raise NotImplementedError(f"Metric {metric} is not implemented")
         
+    def get_coarse_mask(self, eigenvector, kernel_size=3, method="otsu"):
+
+        if not eigenvector.dtype == np.uint8:
+            eigenvector = eigenvector.astype(np.uint8)
+
+        if method == "adaptive":
+        
+            temp = 255 - eigenvector
+            mask = cv2.adaptiveThreshold(src=temp,
+                                            maxValue=255,
+                                            adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                            thresholdType=cv2.THRESH_BINARY,
+                                            blockSize=kernel_size,
+                                            C=2)
+            mask = 255 - mask
+            # conv2d 
+            mask = convolve2d(mask, np.ones((kernel_size+2,kernel_size+2)), mode="same")
+            
+
+        elif method == "otsu":
+            temp = convolve2d(eigenvector, np.ones((kernel_size,kernel_size)), mode="same")
+            temp = ((temp / temp.max()) * 255).astype(np.uint8)
+            _, mask = cv2.threshold(temp, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        
+        else :
+            raise NotImplementedError(f"Method {method} is not implemented")
+
+        mask = mask > 0
+        mask = binary_fill_holes(mask)
+
+        return mask
+
 
     def nms(self, masks, qualities, threshold, metric="iou"):
         # masks: (n_masks, H, W)
@@ -91,12 +128,25 @@ class DSM_SAM():
         final_masks = []
         final_idx = []
 
-        for mask, idx in zip(kept_masks, kept_idx):
-            # filter masks that are too small and keep at least one mask
-            if mask.sum() > self.area_thr * mask.shape[0] * mask.shape[1] or len(final_masks) == 0:
+        area_ratios = torch.Tensor([mask.sum()/(mask.shape[0]*mask.shape[1]) for mask in kept_masks])
+
+
+        # at least one mask is kept : the one with the biggest area
+        max_idx = torch.argmax(area_ratios).item()
+        final_masks = [kept_masks[max_idx]]
+        final_idx = [kept_idx[max_idx]]
+
+        # filter based on area ratios
+        for i, (mask, idx) in enumerate(zip(kept_masks, kept_idx)):
+            if idx == final_idx[0]:
+                # skip the already kept mask
+                continue
+            # compute metrics
+            if area_ratios[i] > self.area_thr:
                 final_masks.append(mask)
                 final_idx.append(idx)
-        
+            # else, discard the mask
+            
         return torch.stack(final_masks), torch.Tensor(final_idx).long()
         
 
@@ -148,10 +198,8 @@ class DSM_SAM():
         for i, (trimask, triquality) in enumerate(zip(masks, qualities)):
             # trimask: (3, H, W)
             idx = i//sample_per_map # eigen map index
-
-            numpy_ref_mask = eigen_maps[idx].astype(np.uint8) # (H, W)
-            _, numpy_ref_mask = cv2.threshold(numpy_ref_mask, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-
+     
+            numpy_ref_mask = self.get_coarse_mask(eigen_maps[idx], kernel_size=3, method="otsu")
 
             coarse_ref_mask = torch.from_numpy(numpy_ref_mask).to("cuda") # (H, W)
 
@@ -188,30 +236,33 @@ class DSM_SAM():
     
 
 def main():
-    dsm_model = DSM(n_eigenvectors=5, lambda_color=2)
+    dsm_model = DSM(n_eigenvectors=5, lambda_color=1)
     dsm_model.to("cuda")
 
     sam = get_sam_model(size="b").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.05)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.2, area_thr=0.1)
 
     dataset = DatasetBuilder(cfg=cfg,)
 
-    seed = 0
+    seed = np.random.randint(0, 1000) # 0 # 42 #
+    seed = 42
+    print(f"Seed: {seed}")
+    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]
 
-    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["imagenet"]
 
     start = time.time()
-    for img_name in support_images:
-        img = Image.open(img_name).convert("RGB")
+
+    for img_path in tqdm(support_images):
+        img = Image.open(img_path).convert("RGB")
         # resize to a multiple of 16
         resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
-        masks,points = model(resized_img, img_name,
+        masks,points = model(resized_img, img_path,
                              sample_per_map=10, 
-                             temperature=255*0.1)
+                             temperature=255*0.5)
 
         lim = min(10, len(masks))
         fig, ax = plt.subplots(1, lim+1)
@@ -228,7 +279,7 @@ def main():
 
         plt.tight_layout()
 
-        plt.savefig(f"temp/{img_name.split('/')[-1]}.png")
+        plt.savefig(f'temp/{"_".join(img_path.split("/")[-2:])}.png')
         plt.close()
     end = time.time()
     print(f"Time: {end-start:.3f}s")
