@@ -116,7 +116,9 @@ def hierarchical_main(cfg):
 
     model = get_model(size="s",use_v2=False).to(device)
 
-    dsm_model = DSM(model=model, n_eigenvectors=5) # same model as the one used for the classification
+    dsm_model = DSM(model=model, # same model as the one used for the classification
+                    n_eigenvectors=cfg.dsm.n_eigenvectors,
+                    lambda_color=cfg.dsm.lambda_color)
     dsm_model.to(device)
 
     sam = get_sam_model(size="b").to(device)    
@@ -125,7 +127,9 @@ def hierarchical_main(cfg):
                                    path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
                                    json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
     
-    hierarchical = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.05)
+    hierarchical = DSM_SAM(dsm_model, sam_model, 
+                           nms_thr=cfg.hierarchical.nms_thr,
+                           area_thr=cfg.hierarchical.area_thr,)
 
     resize = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
 
@@ -156,15 +160,15 @@ def hierarchical_main(cfg):
             img = resize(Image.open(img_path).convert("RGB"))
             masks, _ = hierarchical(img = img, 
                                     path_to_img=img_path,
-                                    sample_per_map=5, 
-                                    temperature=255*0.07)
+                                    sample_per_map=cfg.hierarchical.sample_per_map,
+                                    temperature=cfg.hierarchical.temperature)
 
             masks = masks.detach().cpu().numpy()
             #add the identity mask
             
             masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
+            support_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
         
@@ -175,14 +179,14 @@ def hierarchical_main(cfg):
             img = resize(Image.open(img_path).convert("RGB"))
             masks, _ = hierarchical.forward(img = img, 
                                             path_to_img=img_path,
-                                            sample_per_map=5, 
-                                            temperature=255*0.07)
+                                            sample_per_map=cfg.hierarchical.sample_per_map,
+                                            temperature=cfg.hierarchical.temperature)
 
             masks = masks.detach().cpu().numpy()
             #add the identity mask
             masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            query_augmented_imgs += [crop_mask(img, mask, dezoom=0.1) for mask in masks]
+            query_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
 
@@ -285,6 +289,7 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
     acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True,to_display=to_display)
         
     print("Accuracy: ", round(acc,2))
+
 def main(cfg):
     sampler = DatasetBuilder(cfg)
     

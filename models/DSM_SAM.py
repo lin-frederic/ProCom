@@ -236,19 +236,20 @@ class DSM_SAM():
     
 
 def main():
-    dsm_model = DSM(n_eigenvectors=5, lambda_color=1)
+    dsm_model = DSM(n_eigenvectors=5, lambda_color=10)
     dsm_model.to("cuda")
 
     sam = get_sam_model(size="b").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.2, area_thr=0.1)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.15, area_thr=0.05)
 
     dataset = DatasetBuilder(cfg=cfg,)
 
     seed = np.random.randint(0, 1000) # 0 # 42 #
-    seed = 42
+    seed = 17
+
     print(f"Seed: {seed}")
     support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]
 
@@ -261,8 +262,8 @@ def main():
         resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
         masks,points = model(resized_img, img_path,
-                             sample_per_map=10, 
-                             temperature=255*0.5)
+                             sample_per_map=5, 
+                             temperature=255*0.07)
 
         lim = min(10, len(masks))
         fig, ax = plt.subplots(1, lim+1)
