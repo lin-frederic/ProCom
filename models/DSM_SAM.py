@@ -46,6 +46,8 @@ class DSM_SAM():
             [T.ToTensor(),  
              T.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225])])
+        
+        self.dsm_transform = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
 
         self.nms_thr = nms_thr
         self.area_thr = area_thr
@@ -151,10 +153,33 @@ class DSM_SAM():
         
 
     def forward(self, img, path_to_img, sample_per_map=10, temperature=255*0.1, use_cache=False):
-        # img is a PIL image
+        """
+        Args:
+        img : full size image
+        path_to_img : path to the image (used for caching)
+        sample_per_map : number of samples per eigen map
+        temperature : temperature for sampling
+        use_cache : if True, use the image cache
+
+        Returns:
+        final_masks : (n_masks, H, W)
+        final_prompts : (n_masks, 1, 2)
+        dsm_img : (H, W)
+
+        Warning: the returned masks are not resized to the original image size but to the size used for DSM (ResizeModulo)
+        
+        """
+
+        dsm_img = self.dsm_transform(img)
+
+        w, h = dsm_img.size
+
+        # resize to 1024 
+
+        sam_img = T.Resize(1024)(dsm_img)
 
         # prepare for DSM
-        img_tensor = self.transforms(img)
+        img_tensor = self.transforms(dsm_img) 
         img_tensor = img_tensor.unsqueeze(0)
         img_tensor = img_tensor.to("cuda")
 
@@ -163,14 +188,15 @@ class DSM_SAM():
 
         # compute embeddings for the resized image
         if use_cache:
-            self.sam_predictor.set_image_cache(path_to_img, img)
+            self.sam_predictor.set_image_cache(path_to_img, sam_img)
         else:
             if isinstance(img, Image.Image):
-                self.sam_predictor.set_image(np.array(img))
+                self.sam_predictor.set_image(np.array(sam_img))
             elif isinstance(img, np.ndarray):
-                self.sam_predictor.set_image(img)
+                self.sam_predictor.set_image(sam_img)
             else:
-                raise TypeError(f"img must be a PIL image or a numpy array, got {type(img)}")
+                raise TypeError(f"img must be a PIL image or a numpy array, got {type(sam_img)}")
+        self.sam_predictor.original_size = (h, w)
 
         # sample points from eigen maps
         sample_points = self.dsm_model.sample_from_maps(sample_per_map=sample_per_map, temperature=temperature) # (n_eigen_maps, n_samples, 2)
@@ -179,7 +205,6 @@ class DSM_SAM():
 
         sample_points = torch.from_numpy(sample_points).unsqueeze(1).to("cuda") # (n_eigen_maps * n_samples, 1, 2)
 
-        w, h = img.size
         tranformed_sample_points = self.sam_predictor.transform.apply_coords_torch(sample_points, original_size=(h,w)) # (n_eigen_maps * n_samples, 1, 2)
         points_labels = torch.ones(sample_points.shape[0]).unsqueeze(1).to("cuda") # (n_eigen_maps * n_samples, 1)
 
@@ -222,7 +247,7 @@ class DSM_SAM():
         final_masks, final_indexes = self.nms(kept_masks, kept_qualities, threshold=self.nms_thr, metric="iou")
         final_prompts = sample_points[final_indexes]
 
-        return final_masks, final_prompts
+        return final_masks, final_prompts, dsm_img
 
         
     
@@ -235,50 +260,93 @@ class DSM_SAM():
         return self.forward(img, path_to_img, sample_per_map, temperature, use_cache)
     
 
-def main():
-    dsm_model = DSM(n_eigenvectors=5, lambda_color=10)
+def main(all_in_one=False):
+    dsm_model = DSM(n_eigenvectors=5, 
+                    lambda_color=10)
     dsm_model.to("cuda")
 
     sam = get_sam_model(size="b").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.15, area_thr=0.05)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.015)
 
-    dataset = DatasetBuilder(cfg=cfg,)
+    """dataset = DatasetBuilder(cfg=cfg,)
 
     seed = np.random.randint(0, 1000) # 0 # 42 #
     seed = 17
 
     print(f"Seed: {seed}")
-    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]
+    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]"""
 
+    type_ = "train"
+    path = f"/nasbrain/datasets/LVIS/{type_}2017"
+    limit = 20
+
+    support_images = [os.path.join(path, f) for f in os.listdir(path)]
+
+    seed = np.random.randint(0, 1000) # 0 # 42 #
+    
+    print(f"Seed: {seed}")
+
+    np.random.seed(seed)
+    support_images = np.random.choice(support_images, limit)
+
+    #support_images = ["images/manchot_banane_small.png"]
 
     start = time.time()
 
     for img_path in tqdm(support_images):
         img = Image.open(img_path).convert("RGB")
-        # resize to a multiple of 16
-        resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
-        masks,points = model(resized_img, img_path,
-                             sample_per_map=5, 
-                             temperature=255*0.07)
+        masks,points, resized_img = model(img,
+                             img_path,
+                             sample_per_map=7, 
+                             temperature=255*0.1,)
 
-        lim = min(10, len(masks))
-        fig, ax = plt.subplots(1, lim+1)
-        ax[0].imshow(img)
-        ax[0].axis("off")
+        if all_in_one:
+            # plot all masks in one figure (other one is the original image)
 
-        for i, mask in enumerate(masks[:lim]):
-            ax[i+1].imshow(mask.detach().cpu().numpy())
-            ax[i+1].scatter(points[i,0,0].item(), points[i,0,1].item(), marker="x", color="red")
-            ax[i+1].axis("off")
-            area = mask.sum().item()
-            area_t = mask.shape[0] * mask.shape[1]
-            ax[i+1].set_title(f"{area/area_t:.2f}")
+            plt.subplot(1, 2, 1)    
+            plt.imshow(img) # could have better resolution
+            plt.axis("off")
 
-        plt.tight_layout()
+            plt.subplot(1, 2, 2)
+            img_mask = np.zeros(masks[0].shape + (4,))
+            img_mask[..., 3] = 0
+            for mask, point in zip(masks, points):
+                mask = mask.detach().cpu().numpy()
+                m = mask
+                color_mask = np.concatenate([np.random.random(3), [0.85]])
+                img_mask[m] = color_mask
+                plt.scatter(point[0,0].cpu(), point[0,1].cpu(), c="r", s=10)
+
+            plt.imshow(resized_img)
+            plt.imshow(img_mask)
+            plt.axis("off")
+
+        else:
+            # square plot
+            n = len(masks)+1
+            h = int(np.sqrt(n))
+            w = int(np.ceil(n/h))
+            fig, axes = plt.subplots(h, w, figsize=(w*3, h*3))
+            axes = axes.flatten()
+            axes[0].imshow(img)
+            axes[0].axis("off")
+
+            for i, (mask, point) in enumerate(zip(masks, points)):
+                ax = axes[i+1]
+                ax.imshow(mask.detach().cpu().numpy(), cmap="Blues")
+                ax.scatter(point[0,0].cpu(), point[0,1].cpu(), c="r", s=10)
+                ax.axis("off")
+            
+            # fill the remaining axes
+            for i in range(len(masks)+1, len(axes)):
+                ax = axes[i]
+                ax.imshow(resized_img)
+                ax.axis("off")
+            plt.tight_layout()
 
         plt.savefig(f'temp/{"_".join(img_path.split("/")[-2:])}.png')
         plt.close()
@@ -287,5 +355,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(all_in_one=True)
     print("Done!")
