@@ -212,6 +212,9 @@ class DSM_SAM():
         masks, qualities, _ = self.sam_predictor.predict_torch(point_coords=tranformed_sample_points,
                                                                            point_labels=points_labels,
                                                                            multimask_output=True,)
+        
+        self.sam_predictor.reset_image() # no need to keep the image in memory
+
         # -> multimask_output sets the number of masks to 3 (3 granularity levels)
         # masks: (n_eigen_maps * n_samples, 3, H, W)
         # qualities: (n_eigen_maps * n_samples, 3)
