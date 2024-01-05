@@ -28,6 +28,11 @@ from models.deepSpectralMethods import DSM
 from tools import iou, focal_loss, dice_loss
 from typing import Union
 
+import alpha_clip
+import math
+
+
+
 class Identity(nn.Module):
     def __init__(self):
         super().__init__()
@@ -170,6 +175,102 @@ class DeepSpectralMethods(nn.Module):
             mask["segmentation"] = self.clean(mask["segmentation"], 224, 224)
         return masks
     
+class CLIP(nn.Module):
+    def __init__(self, size="b", sam = None):
+        super().__init__()
+
+        # load model and prepare mask transform
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if size == "s":
+            size = "b" # b is the smallest size
+            print("Warning : Clip size s does not exist, using Clip size b instead")
+        if size == "h":
+            size = "b" # b is the smallest size
+            print("Warning : Alpha Clip size h does not exist, using CLip size b instead")
+        sizes = {
+            "b" : "clip_b16_grit20m_fultune_2xe.pth",
+            "l" : "clip_l14_grit20m_fultune_2xe.pth",
+        }
+        sizes_ViT = {
+            "b":"ViT-B/16",
+            "l":"ViT-L/14",
+        }
+        
+        self.sam = sam 
+        if self.sam is None : 
+            self.sam = SAM(size)
+
+        self.model, self.preprocess = alpha_clip.load(
+            sizes_ViT[size], 
+            alpha_vision_ckpt_pth=f"/nasbrain/f21lin/{sizes[size]}",
+            device=self.device
+        ) 
+        self.mask_transform = T.Compose([
+            T.ToTensor(), 
+            T.Resize((224, 224)), # change to (336,336) when using ViT-L/14@336px
+            T.Normalize(0.5, 0.26)
+        ])
+        print("CLIP loaded")
+    
+    def clip(self, image, binary_mask, list_of_words):
+        """
+        image : source image in RGB 
+        binary_mask : output from sam (one matrix with True and False)
+        list_of_words : list of words we want to check if they are present or not in the mask area
+        """
+        # prepare image and mask
+        #image = Image.open(img_path).convert('RGB')
+        alpha = self.mask_transform((binary_mask * 255).astype(np.uint8))
+        alpha = alpha.half().cuda().unsqueeze(dim=0)
+
+        # calculate image and text features
+        image = self.preprocess(image).unsqueeze(0).half().to(self.device)
+        text = alpha_clip.tokenize(list_of_words).to(self.device)
+
+        with torch.no_grad():
+            image_features = self.model.visual(image, alpha)
+            text_features = self.model.encode_text(text)
+
+        # normalize
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+        ## print the result
+        similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+        #print("Label probs:", similarity.cpu().numpy()) # prints: [[9.388e-05 9.995e-01 2.415e-04]]
+        return similarity.cpu().numpy() , alpha
+
+    def forward(self, img, list_of_words, masks=None):
+        if not isinstance(img, Image.Image):
+            print("Image should be image type")
+        if masks is None : 
+            masks = self.sam.forward(img)
+        new_masks = []
+        for elt in masks:
+            mask = elt['segmentation']
+            similarity , alpha = self.clip(img, mask, list_of_words)
+            new_masks.append(
+                {
+                    'segmentation' : mask, 
+                    'similarity' : similarity, 
+                    'alpha' : alpha,
+                }
+            )
+        return new_masks
+
+    def get_attention_layer (self, img, alpha): 
+        with torch.no_grad():
+            image_features, attention_last = model.visual(img, alpha, return_attn=True)  
+            attentions = attention_last.unsqueeze(dim=0)
+
+        nh = attentions.shape[1]
+        attentions = attentions[0, :, 0, 1:].reshape(nh, -1)
+        p_s = int(math.sqrt(attentions.shape[1]))
+        attentions = attentions.reshape(nh, p_s, p_s)
+        attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=int((224//p_s)), mode="nearest")[0].cpu().numpy()
+        
+
+
 def postprocess_area(masks, threshold=0.5):
     # invert mask to have an area less than 0.5 (or threshold) of the image
     # in place operation
