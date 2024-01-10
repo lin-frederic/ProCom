@@ -1,0 +1,12 @@
+matplotlib==3.8.2
+numpy==1.26.3
+Pillow==10.0.1
+Pillow==10.2.0
+pymatting==1.1.12
+Requests==2.31.0
+scipy==1.11.4
+segment_anything==1.0
+torch==2.3.0.dev20231230
+torchvision==0.18.0.dev20231230
+tqdm==4.65.0
+wandb==0.16.2
