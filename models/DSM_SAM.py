@@ -13,6 +13,9 @@ from models.deepSpectralMethods import DSM
 from segment_anything import SamPredictor # non cached version
 from model import get_sam_model, CachedSamPredictor
 
+from scipy.signal import convolve2d
+from scipy.ndimage import binary_fill_holes
+
 import torch
 
 from torchvision import transforms as T
@@ -28,10 +31,14 @@ import numpy as np
 
 import time
 
+from tqdm import tqdm
+
 class DSM_SAM():
     def __init__(self, dsm_model: DSM, 
                  sam_model: CachedSamPredictor,
-                 nms_thr=0.5):
+                 nms_thr=0.5,
+                 area_thr=0.05, # under this threshold, the mask is discarded
+                 ):
         super().__init__()
         self.dsm_model = dsm_model
         self.sam_predictor = sam_model
@@ -39,8 +46,11 @@ class DSM_SAM():
             [T.ToTensor(),  
              T.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225])])
+        
+        self.dsm_transform = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
 
         self.nms_thr = nms_thr
+        self.area_thr = area_thr
 
     def get_metric(self, ref_mask, pred_mask, metric="iou"):
         assert len(ref_mask.shape) == 2, "unbatch ref_mask"
@@ -61,8 +71,40 @@ class DSM_SAM():
         else:
             raise NotImplementedError(f"Metric {metric} is not implemented")
         
+    def get_coarse_mask(self, eigenvector, kernel_size=3, method="otsu"):
 
-    def nms(self, masks, qualities, threshold=0.5, metric="iou"):
+        if not eigenvector.dtype == np.uint8:
+            eigenvector = eigenvector.astype(np.uint8)
+
+        if method == "adaptive":
+        
+            temp = 255 - eigenvector
+            mask = cv2.adaptiveThreshold(src=temp,
+                                            maxValue=255,
+                                            adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                            thresholdType=cv2.THRESH_BINARY,
+                                            blockSize=kernel_size,
+                                            C=2)
+            mask = 255 - mask
+            # conv2d 
+            mask = convolve2d(mask, np.ones((kernel_size+2,kernel_size+2)), mode="same")
+            
+
+        elif method == "otsu":
+            temp = convolve2d(eigenvector, np.ones((kernel_size,kernel_size)), mode="same")
+            temp = ((temp / temp.max()) * 255).astype(np.uint8)
+            _, mask = cv2.threshold(temp, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        
+        else :
+            raise NotImplementedError(f"Method {method} is not implemented")
+
+        mask = mask > 0
+        mask = binary_fill_holes(mask)
+
+        return mask
+
+
+    def nms(self, masks, qualities, threshold, metric="iou"):
         # masks: (n_masks, H, W)
         # qualities: (n_masks)
         # threshold: threshold for NMS
@@ -84,15 +126,60 @@ class DSM_SAM():
             if all([iou < threshold for iou in ious]):
                 kept_masks.append(mask)
                 kept_idx.append(i)
-        
-        return torch.stack(kept_masks), torch.Tensor(kept_idx).long()
+
+        final_masks = []
+        final_idx = []
+
+        area_ratios = torch.Tensor([mask.sum()/(mask.shape[0]*mask.shape[1]) for mask in kept_masks])
+
+
+        # at least one mask is kept : the one with the biggest area
+        max_idx = torch.argmax(area_ratios).item()
+        final_masks = [kept_masks[max_idx]]
+        final_idx = [kept_idx[max_idx]]
+
+        # filter based on area ratios
+        for i, (mask, idx) in enumerate(zip(kept_masks, kept_idx)):
+            if idx == final_idx[0]:
+                # skip the already kept mask
+                continue
+            # compute metrics
+            if area_ratios[i] > self.area_thr:
+                final_masks.append(mask)
+                final_idx.append(idx)
+            # else, discard the mask
+            
+        return torch.stack(final_masks), torch.Tensor(final_idx).long()
         
 
-    def forward(self, img, path_to_img, sample_per_map=10, temperature=255*0.1):
-        # img is a PIL image
+    def forward(self, img, path_to_img, sample_per_map=10, temperature=255*0.1, use_cache=False):
+        """
+        Args:
+        img : full size image
+        path_to_img : path to the image (used for caching)
+        sample_per_map : number of samples per eigen map
+        temperature : temperature for sampling
+        use_cache : if True, use the image cache
+
+        Returns:
+        final_masks : (n_masks, H, W)
+        final_prompts : (n_masks, 1, 2)
+        dsm_img : (H, W)
+
+        Warning: the returned masks are not resized to the original image size but to the size used for DSM (ResizeModulo)
+        
+        """
+
+        dsm_img = self.dsm_transform(img)
+
+        w, h = dsm_img.size
+
+        # resize to 1024 
+
+        sam_img = T.Resize(1024)(dsm_img)
 
         # prepare for DSM
-        img_tensor = self.transforms(img)
+        img_tensor = self.transforms(dsm_img) 
         img_tensor = img_tensor.unsqueeze(0)
         img_tensor = img_tensor.to("cuda")
 
@@ -100,7 +187,16 @@ class DSM_SAM():
         eigen_maps = self.dsm_model.set_map(img_tensor) # returns numpy array (n_eigen_maps, H, W)
 
         # compute embeddings for the resized image
-        self.sam_predictor.set_image_cache(path_to_img, img)
+        if use_cache:
+            self.sam_predictor.set_image_cache(path_to_img, sam_img)
+        else:
+            if isinstance(img, Image.Image):
+                self.sam_predictor.set_image(np.array(sam_img))
+            elif isinstance(img, np.ndarray):
+                self.sam_predictor.set_image(sam_img)
+            else:
+                raise TypeError(f"img must be a PIL image or a numpy array, got {type(sam_img)}")
+        self.sam_predictor.original_size = (h, w)
 
         # sample points from eigen maps
         sample_points = self.dsm_model.sample_from_maps(sample_per_map=sample_per_map, temperature=temperature) # (n_eigen_maps, n_samples, 2)
@@ -109,7 +205,6 @@ class DSM_SAM():
 
         sample_points = torch.from_numpy(sample_points).unsqueeze(1).to("cuda") # (n_eigen_maps * n_samples, 1, 2)
 
-        w, h = img.size
         tranformed_sample_points = self.sam_predictor.transform.apply_coords_torch(sample_points, original_size=(h,w)) # (n_eigen_maps * n_samples, 1, 2)
         points_labels = torch.ones(sample_points.shape[0]).unsqueeze(1).to("cuda") # (n_eigen_maps * n_samples, 1)
 
@@ -117,6 +212,9 @@ class DSM_SAM():
         masks, qualities, _ = self.sam_predictor.predict_torch(point_coords=tranformed_sample_points,
                                                                            point_labels=points_labels,
                                                                            multimask_output=True,)
+        
+        self.sam_predictor.reset_image() # no need to keep the image in memory
+
         # -> multimask_output sets the number of masks to 3 (3 granularity levels)
         # masks: (n_eigen_maps * n_samples, 3, H, W)
         # qualities: (n_eigen_maps * n_samples, 3)
@@ -128,10 +226,8 @@ class DSM_SAM():
         for i, (trimask, triquality) in enumerate(zip(masks, qualities)):
             # trimask: (3, H, W)
             idx = i//sample_per_map # eigen map index
-
-            numpy_ref_mask = eigen_maps[idx].astype(np.uint8) # (H, W)
-            _, numpy_ref_mask = cv2.threshold(numpy_ref_mask, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-
+     
+            numpy_ref_mask = self.get_coarse_mask(eigen_maps[idx], kernel_size=3, method="otsu")
 
             coarse_ref_mask = torch.from_numpy(numpy_ref_mask).to("cuda") # (H, W)
 
@@ -139,7 +235,8 @@ class DSM_SAM():
 
             metrics = [self.get_metric(coarse_ref_mask, 
                                     mask, metric="iou") for mask in trimask]
-
+            #[1:] 
+            # 0 is the smallest mask, uncomment to discard it
 
             # keep the best one
             best_idx = torch.argmax(torch.Tensor(metrics)).item()
@@ -153,7 +250,7 @@ class DSM_SAM():
         final_masks, final_indexes = self.nms(kept_masks, kept_qualities, threshold=self.nms_thr, metric="iou")
         final_prompts = sample_points[final_indexes]
 
-        return final_masks, final_prompts
+        return final_masks, final_prompts, dsm_img
 
         
     
@@ -161,59 +258,105 @@ class DSM_SAM():
                  img, 
                  path_to_img,
                  sample_per_map=10, 
-                 temperature=255*0.1):
-        return self.forward(img, path_to_img, sample_per_map, temperature)
+                 temperature=255*0.1,
+                 use_cache=False):
+        return self.forward(img, path_to_img, sample_per_map, temperature, use_cache)
     
 
-def main():
-    dsm_model = DSM(n_eigenvectors=5)
+def main(all_in_one=False):
+    dsm_model = DSM(n_eigenvectors=5, 
+                    lambda_color=10)
     dsm_model.to("cuda")
 
     sam = get_sam_model(size="b").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.4)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.015)
 
-    dataset = DatasetBuilder(cfg=cfg,)
-    support_images, support_labels, query_images, query_labels = dataset(seed_classes=0, seed_images=0)["imagenet"]
+    """dataset = DatasetBuilder(cfg=cfg,)
 
-    print(len(support_images))
+    seed = np.random.randint(0, 1000) # 0 # 42 #
+    seed = 17
+
+    print(f"Seed: {seed}")
+    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]"""
+
+    type_ = "train"
+    path = f"/nasbrain/datasets/LVIS/{type_}2017"
+    limit = 20
+
+    support_images = [os.path.join(path, f) for f in os.listdir(path)]
+
+    seed = np.random.randint(0, 1000) # 0 # 42 #
+    
+    print(f"Seed: {seed}")
+
+    np.random.seed(seed)
+    support_images = np.random.choice(support_images, limit)
+
+    #support_images = ["images/manchot_banane_small.png"]
 
     start = time.time()
-    for img_name in support_images:
-        img = Image.open(img_name).convert("RGB")
-        # resize to a multiple of 16
-        resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
 
-        masks,points = model(resized_img, img_name,
-                             sample_per_map=1, temperature=255*0.1)
+    for img_path in tqdm(support_images):
+        img = Image.open(img_path).convert("RGB")
 
-        """lim = min(10, len(masks))
-        fig, ax = plt.subplots(1, lim, )
-        for i, mask in enumerate(masks[:lim]):
-            ax[i].imshow(mask.detach().cpu().numpy())
-            ax[i].scatter(points[i,0,0].item(), points[i,0,1].item(), marker="x", color="red")
-            ax[i].axis("off")
+        masks,points, resized_img = model(img,
+                             img_path,
+                             sample_per_map=7, 
+                             temperature=255*0.1,)
 
-        plt.tight_layout()
+        if all_in_one:
+            # plot all masks in one figure (other one is the original image)
 
-        plt.savefig("temp/DSM_SAM.png")
-        plt.close()"""
+            plt.subplot(1, 2, 1)    
+            plt.imshow(img) # could have better resolution
+            plt.axis("off")
+
+            plt.subplot(1, 2, 2)
+            img_mask = np.zeros(masks[0].shape + (4,))
+            img_mask[..., 3] = 0
+            for mask, point in zip(masks, points):
+                mask = mask.detach().cpu().numpy()
+                m = mask
+                color_mask = np.concatenate([np.random.random(3), [0.85]])
+                img_mask[m] = color_mask
+                plt.scatter(point[0,0].cpu(), point[0,1].cpu(), c="r", s=10)
+
+            plt.imshow(resized_img)
+            plt.imshow(img_mask)
+            plt.axis("off")
+
+        else:
+            # square plot
+            n = len(masks)+1
+            h = int(np.sqrt(n))
+            w = int(np.ceil(n/h))
+            fig, axes = plt.subplots(h, w, figsize=(w*3, h*3))
+            axes = axes.flatten()
+            axes[0].imshow(img)
+            axes[0].axis("off")
+
+            for i, (mask, point) in enumerate(zip(masks, points)):
+                ax = axes[i+1]
+                ax.imshow(mask.detach().cpu().numpy(), cmap="Blues")
+                ax.scatter(point[0,0].cpu(), point[0,1].cpu(), c="r", s=10)
+                ax.axis("off")
+            
+            # fill the remaining axes
+            for i in range(len(masks)+1, len(axes)):
+                ax = axes[i]
+                ax.imshow(resized_img)
+                ax.axis("off")
+            plt.tight_layout()
+
+        plt.savefig(f'temp/{"_".join(img_path.split("/")[-2:])}.png')
+        plt.close()
     end = time.time()
-    print(f"Time: {end-start}s")
-
-    for img_name in support_images:
-        img = Image.open(img_name).convert("RGB")
-        # resize to a multiple of 16
-        resized_img = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(img)   
-
-        masks,points = model(resized_img, img_name,
-                             sample_per_map=1, temperature=255*0.1)
-        
-    print(f"time2 {time.time()-end}s")
+    print(f"Time: {end-start:.3f}s")
 
 
 if __name__ == "__main__":
-    main()
+    main(all_in_one=True)
     print("Done!")

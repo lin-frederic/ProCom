@@ -73,7 +73,8 @@ class CachedSamPredictor(SamPredictor):
     def set_image_cache(self, image_path, image):
         
         if "/" in image_path:
-            image_name = image_path.split("/")[-1]
+            image_name = "_".join(image_path.split("/")[-2:])
+            # keep unique names (cf caltech dataset, where there are multiple images with the same name but in different folders)
         else:
             image_name = image_path
 
