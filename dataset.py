@@ -174,8 +174,78 @@ class DatasetBuilder():
             dataset_dict[dataset_name] = (support_images, support_labels, query_images, query_labels)
         return dataset_dict
                 
-    
-
+class COCOSampler():
+    def __init__(self,cfg):
+        self.path = cfg.paths["coco"]
+        self.n_ways = cfg.sampler.n_ways["coco"]
+        self.n_shots = cfg.sampler.n_shots
+        self.n_queries = cfg.sampler.n_queries
+    def __call__(self, seed_classes = None, seed_images = None):
+        with open(f"{self.path}/annotations/instances_val2017.json", "r") as f:
+            data = json.load(f)
+        all_images = [(data["images"][i]["id"], data["images"][i]["file_name"]) for i in range(len(data["images"]))]
+        all_annotations = [(data["annotations"][i]["category_id"],
+                            data["annotations"][i]["image_id"],
+                            data["annotations"][i]["bbox"])
+                            for i in range(len(data["annotations"]))]
+        categories = {}
+        # count the number of images per category
+        # problem here: one image can be in multiple categories so redundancy
+        for i in range(len(all_annotations)):
+            if all_annotations[i][0] not in categories:
+                categories[all_annotations[i][0]] = set()
+            categories[all_annotations[i][0]].add(all_annotations[i][1])
+        valid_categories = [] # we want only categories with sufficient images to sample
+        for category in categories:
+            if len(categories[category]) >= 4*(self.n_shots+self.n_queries): # 4*(k+m) to not always sample the same images
+                valid_categories.append(category)
+        selected_categories = rd.sample(valid_categories, self.n_ways)
+        selected_images = {}
+        seen_images = set()
+        for category in selected_categories:
+            selected_images[category] = []
+            # take k+m images randomly from categories[category] but we need to make sure that
+            # the images are not in seen_imgs to avoid duplicates among categories
+            category_images = list(categories[category])
+            rd.shuffle(category_images)
+            for img in category_images:
+                if img not in seen_images:
+                    selected_images[category].append(img)
+                    seen_images.add(img)
+                if len(selected_images[category]) == self.n_shots+self.n_queries:
+                    break
+            assert len(selected_images[category]) == self.n_shots+self.n_queries
+        selected_annotations = {}
+        for annotation in all_annotations:
+            category_id, image_id, bbox = annotation
+            if image_id in seen_images:
+                if image_id not in selected_annotations:
+                    selected_annotations[image_id] = []
+                selected_annotations[image_id].append((category_id, bbox))
+        for category in selected_categories:
+            for img in selected_images[category]:
+                selected_annotations[img] = (category, selected_annotations[img]) # (img_category, [(category, bbox), ...])
+        for img in all_images:
+            img_id, img_name = img
+            if img_id in selected_annotations:
+                img_path = f"{self.path}/images/val2017/{img_name}"
+                selected_annotations[img_id] = (img_path, selected_annotations[img_id][0], selected_annotations[img_id][1])
+        #selected_annotations = {img_id: (img_path, img_category, [(category, bbox), ...])}
+        #group by category and split into support and query
+        dataset = {}
+        for img_id in selected_annotations:
+            img_path, img_category, annotations = selected_annotations[img_id]
+            if img_category not in dataset:
+                dataset[img_category] = {}
+                dataset[img_category]["support"] = []
+                dataset[img_category]["query"] = []
+            if len(dataset[img_category]["support"]) < self.n_shots:
+                dataset[img_category]["support"].append(selected_annotations[img_id])
+            else:
+                dataset[img_category]["query"].append(selected_annotations[img_id])
+        #dataset = {img_category: {"support": [(img_path, img_category, [(category, bbox), ...]), ...], "query": [img_path, ...]}, ...}
+        #now we need to sample the query images
+        return dataset
 
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
@@ -227,5 +297,14 @@ def main_ter():
         print("query images:  ", len(query_images))
         print("query labels:  ", len(query_labels))
 
+def main_coco():
+    coco_sampler = COCOSampler(cfg)
+    coco_sample = coco_sampler()
+    test_category = list(coco_sample.keys())[0]
+    print(test_category)
+    print("support")
+    print(coco_sample[test_category]["support"])
+    print("query")
+    print(coco_sample[test_category]["query"])
 if __name__== "__main__":
-    main_bis()
+    main_coco()
