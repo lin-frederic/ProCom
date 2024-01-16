@@ -131,8 +131,6 @@ def hierarchical_main(cfg):
                            nms_thr=cfg.hierarchical.nms_thr,
                            area_thr=cfg.hierarchical.area_thr,)
 
-    resize = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
-
     transforms = T.Compose([
             ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
             T.Normalize(mean=[0.485,0.456,0.406],
@@ -157,8 +155,8 @@ def hierarchical_main(cfg):
         support_labels = []
 
         for i, img_path in enumerate(support_images):
-            img = resize(Image.open(img_path).convert("RGB"))
-            masks, _ = hierarchical(img = img, 
+            img = Image.open(img_path).convert("RGB")
+            masks, _, resized_img = hierarchical(img = img, 
                                     path_to_img=img_path,
                                     sample_per_map=cfg.hierarchical.sample_per_map,
                                     temperature=cfg.hierarchical.temperature)
@@ -168,7 +166,7 @@ def hierarchical_main(cfg):
             
             masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
+            support_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
             labels = [(temp_support_labels[i], i) for j in range(len(masks))]
             support_labels += labels
         
@@ -176,7 +174,7 @@ def hierarchical_main(cfg):
         query_labels = []
 
         for i, img_path in enumerate(query_images):
-            img = resize(Image.open(img_path).convert("RGB"))
+            img = Image.open(img_path).convert("RGB")
             masks, _ = hierarchical.forward(img = img, 
                                             path_to_img=img_path,
                                             sample_per_map=cfg.hierarchical.sample_per_map,
@@ -186,7 +184,7 @@ def hierarchical_main(cfg):
             #add the identity mask
             masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            query_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
+            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
             query_labels += labels
 

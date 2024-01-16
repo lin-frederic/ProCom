@@ -265,10 +265,10 @@ class DSM_SAM():
 
 def main(all_in_one=False):
     dsm_model = DSM(n_eigenvectors=5, 
-                    lambda_color=10)
+                    lambda_color=1)
     dsm_model.to("cuda")
 
-    sam = get_sam_model(size="b").to("cuda")
+    sam = get_sam_model(size="l").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
@@ -289,6 +289,7 @@ def main(all_in_one=False):
     support_images = [os.path.join(path, f) for f in os.listdir(path)]
 
     seed = np.random.randint(0, 1000) # 0 # 42 #
+    seed = 489
     
     print(f"Seed: {seed}")
 
@@ -310,6 +311,7 @@ def main(all_in_one=False):
         if all_in_one:
             # plot all masks in one figure (other one is the original image)
 
+            plt.figure(figsize=(10, 5), dpi=200)
             plt.subplot(1, 2, 1)    
             plt.imshow(img) # could have better resolution
             plt.axis("off")
@@ -317,6 +319,13 @@ def main(all_in_one=False):
             plt.subplot(1, 2, 2)
             img_mask = np.zeros(masks[0].shape + (4,))
             img_mask[..., 3] = 0
+
+            # order masks by area
+            areas = torch.stack([mask.sum() for mask in masks]) 
+            sorted_idx = torch.argsort(areas, descending=True)
+            masks = [masks[i] for i in sorted_idx]
+            points = [points[i] for i in sorted_idx]
+
             for mask, point in zip(masks, points):
                 mask = mask.detach().cpu().numpy()
                 m = mask
