@@ -177,7 +177,7 @@ class DatasetBuilder():
 class COCOSampler():
     def __init__(self,cfg):
         self.path = cfg.paths["coco"]
-        self.n_ways = cfg.sampler.n_ways["coco"]
+        self.n_ways = 5
         self.n_shots = cfg.sampler.n_shots
         self.n_queries = cfg.sampler.n_queries
     def __call__(self, seed_classes = None, seed_images = None):
@@ -234,18 +234,18 @@ class COCOSampler():
         #selected_annotations = {img_id: (img_path, img_category, [(category, bbox), ...])}
         #group by category and split into support and query
         dataset = {}
+        dataset["support"] = {}
+        dataset["query"] = {}
         for img_id in selected_annotations:
             img_path, img_category, annotations = selected_annotations[img_id]
-            if img_category not in dataset:
-                dataset[img_category] = {}
-                dataset[img_category]["support"] = []
-                dataset[img_category]["query"] = []
-            if len(dataset[img_category]["support"]) < self.n_shots:
-                dataset[img_category]["support"].append(selected_annotations[img_id])
+            if img_category not in dataset["support"]:
+                dataset["support"][img_category] = []
+                dataset["query"][img_category] = []
+            if len(dataset["support"][img_category]) < self.n_shots:
+                dataset["support"][img_category].append(selected_annotations[img_id])
             else:
-                dataset[img_category]["query"].append(selected_annotations[img_id])
-        #dataset = {img_category: {"support": [(img_path, img_category, [(category, bbox), ...]), ...], "query": [img_path, ...]}, ...}
-        #now we need to sample the query images
+                dataset["query"][img_category].append(selected_annotations[img_id])
+        #dataset = {"support": {category: [(img_path, img_category, [(category, bbox), ...]), ...]}, "query": {category: [(img_path, img_category, [(category, bbox), ...]), ...]}
         return dataset
 
 def main():
@@ -301,11 +301,10 @@ def main_ter():
 def main_coco():
     coco_sampler = COCOSampler(cfg)
     coco_sample = coco_sampler()
-    test_category = list(coco_sample.keys())[0]
-    print(test_category)
+    test_category = list(coco_sample["support"].keys())[0]
     print("support")
-    print(coco_sample[test_category]["support"])
-    print("query")
-    print(coco_sample[test_category]["query"])
+    print(coco_sample["support"])
+    print(f"query class {test_category}")
+    print(coco_sample["query"][test_category])
 if __name__== "__main__":
     main_coco()
