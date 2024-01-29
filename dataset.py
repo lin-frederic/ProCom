@@ -221,7 +221,8 @@ class COCOSampler():
             if image_id in seen_images:
                 if image_id not in selected_annotations:
                     selected_annotations[image_id] = []
-                selected_annotations[image_id].append((category_id, bbox))
+                if category_id in selected_categories:
+                    selected_annotations[image_id].append((category_id, bbox))
         for category in selected_categories:
             for img in selected_images[category]:
                 selected_annotations[img] = (category, selected_annotations[img]) # (img_category, [(category, bbox), ...])
