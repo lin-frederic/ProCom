@@ -154,7 +154,7 @@ def hierarchical_main(cfg):
     for episode_idx in pbar:
         
         if dataset == "coco":
-            temp = sampler(seed_classes=episode_idx, seed_images=episode_idx)
+            temp = coco_sampler(seed_classes=episode_idx, seed_images=episode_idx)
             support_images, temp_support_labels, query_images, temp_query_labels, _ = coco_sampler.format(temp)
         else:
 
@@ -187,7 +187,7 @@ def hierarchical_main(cfg):
 
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            masks, _ = hierarchical.forward(img = img, 
+            masks, _, resized_img =hierarchical.forward(img = img, 
                                             path_to_img=img_path,
                                             sample_per_map=cfg.hierarchical.sample_per_map,
                                             temperature=cfg.hierarchical.temperature)
