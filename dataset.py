@@ -331,7 +331,7 @@ def main_ter():
 def main_coco():
     coco_sampler = COCOSampler(cfg)
     coco_sample = coco_sampler()
-    support_images, support_labels, query_images, query_labels, boxes = coco_sample
+    support_images, support_labels, query_images, query_labels, boxes = coco_sampler.format(coco_sample)
     print("support")
     print(support_images)
     print(support_labels)

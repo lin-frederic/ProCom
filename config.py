@@ -40,7 +40,7 @@ config = {
         "temperature":255*0.07 # the maps are normalized to [0,1] and then multiplied by temperature
     },
 
-    "dezoom" : 0.1 # dezoom factor for the crop of the image
+    "dezoom" : 0.0 # dezoom factor for the crop of the image
 }
 
 cfg = Box(config)

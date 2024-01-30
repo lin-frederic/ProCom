@@ -33,7 +33,7 @@ for run in runs:
         continue
 
     if run.config["dataset"] == dataset:
-        if run.config["type"] == "hierarchical" and (run.name == args.name_hier or args.name_hier == "none"):
+        if run.config["type"] in ["hierarchical", "coco"] and (run.name == args.name_hier or args.name_hier == "none"):
             name_hier = run.id
         elif run.config["type"] == "baseline" and (run.name == args.name_base or args.name_base == "none"):
             name_base = run.id

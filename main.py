@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np
 from models.maskBlocks import Identity, DeepSpectralMethods, SAM, combine_masks, filter_masks
 from uuid import uuid4
-from augment.augmentations import crop_mask
+from augment.augmentations import crop_mask, crop
 from tools import PadAndResize
 from PIL import Image
 import os
@@ -118,6 +118,7 @@ def baseline(cfg):
 
 def hierarchical_main(cfg):
     sampler = DatasetBuilder(cfg)
+    coco_sampler = COCOSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = get_model(size="s",use_v2=False).to(device)
@@ -152,10 +153,15 @@ def hierarchical_main(cfg):
 
     for episode_idx in pbar:
         
-        episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
-        sample = episode[dataset] 
+        if dataset == "coco":
+            temp = sampler(seed_classes=episode_idx, seed_images=episode_idx)
+            support_images, temp_support_labels, query_images, temp_query_labels, _ = coco_sampler.format(temp)
+        else:
 
-        support_images, temp_support_labels, query_images, temp_query_labels = sample
+            episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
+            sample = episode[dataset] 
+
+            support_images, temp_support_labels, query_images, temp_query_labels = sample
 
         support_augmented_imgs = []
         support_labels = []
@@ -258,15 +264,11 @@ def main_coco(cfg):
             img = Image.open(img_path).convert("RGB")
             bboxes = filtered_annotations[img_path] # list of bboxes
 
-            masks = np.zeros((len(bboxes), img.size[1], img.size[0]))
-            for j, bbox in enumerate(bboxes):
+            for bbox in bboxes:
+                bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]] # convert to [x1,y1,x2,y2]
+                support_augmented_imgs += [img.crop(bbox)]
 
-                bbox = list(map(int, bbox))
-                masks[j, bbox[1]:bbox[3], bbox[0]:bbox[2]] = 1
-                masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
-
-            support_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
-            labels = [(temp_support_labels[i], i) for j in range(len(masks))]
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes))]
             support_labels += labels
 
         query_augmented_imgs = []
@@ -275,15 +277,12 @@ def main_coco(cfg):
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
             bboxes = filtered_annotations[img_path]
-            masks = np.zeros((len(bboxes), img.size[1], img.size[0]))
-            for j, bbox in enumerate(bboxes):
 
-                bbox = list(map(int, bbox))
-                masks[j, bbox[1]:bbox[3], bbox[0]:bbox[2]] = 1
-                masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
-        
-            query_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
-            labels = [(temp_query_labels[i], i) for j in range(len(masks))]
+            for bbox in bboxes:
+                bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
+                query_augmented_imgs += [img.crop(bbox)]
+
+            labels = [(temp_query_labels[i], i) for j in range(len(bboxes))]
             query_labels += labels
 
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
