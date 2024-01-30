@@ -1,5 +1,5 @@
 import torch
-from dataset import DatasetBuilder
+from dataset import DatasetBuilder, COCOSampler
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
@@ -23,6 +23,7 @@ from models.deepSpectralMethods import DSM
 
 def baseline(cfg):
     sampler = DatasetBuilder(cfg)
+    coco_sampler = COCOSampler(cfg)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False)
@@ -44,16 +45,21 @@ def baseline(cfg):
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
 
     for episode_idx in pbar:
-        
-        # new sample for each run
-        episode = sampler(
-            seed_classes=episode_idx, 
-            seed_images=episode_idx
-        ) #episode is (dataset, classe, support/query, image_path)
 
-        sample = episode[dataset]
+        if dataset == "coco":
+            temp = coco_sampler(seed_classes=episode_idx, seed_images=episode_idx)
+            support_images, temp_support_labels, query_images, temp_query_labels, _ = coco_sampler.format(temp)
+        else:
+    
+            # new sample for each run
+            episode = sampler(
+                seed_classes=episode_idx, 
+                seed_images=episode_idx
+            ) #episode is (dataset, classe, support/query, image_path)
 
-        support_images, temp_support_labels, query_images, temp_query_labels = sample
+            sample = episode[dataset]
+
+            support_images, temp_support_labels, query_images, temp_query_labels = sample
 
 
         # strategy: take the identity mask + the top k (config) sam masks 
@@ -218,7 +224,98 @@ def hierarchical_main(cfg):
             
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
+
+def main_coco(cfg):
+    coco_sampler = COCOSampler(cfg)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = get_model(size="s",use_v2=False).to(device)
+
+    transforms = T.Compose([
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
+            T.Normalize(mean=[0.485,0.456,0.406],
+                        std=[0.229,0.224,0.225]) # imagenet mean and std
+        ])
+    
+    # coco dataset
+
+    L_acc = []
+    ncm = NCM()
+
+    pbar = tqdm(range(cfg.n_runs), desc="Runs")
+
+    for episode_idx in pbar:
+        dataset = coco_sampler(seed_classes=episode_idx, seed_images=episode_idx)
+
+        support_images, temp_support_labels, query_images, temp_query_labels, annotations = coco_sampler.format(dataset)
+
+        filtered_annotations = coco_sampler.filter_annotations(annotations)
+
+        support_augmented_imgs = []
+        support_labels = []
+
+        for i, img_path in enumerate(support_images):
+            img = Image.open(img_path).convert("RGB")
+            bboxes = filtered_annotations[img_path] # list of bboxes
+
+            masks = np.zeros((len(bboxes), img.size[1], img.size[0]))
+            for j, bbox in enumerate(bboxes):
+
+                bbox = list(map(int, bbox))
+                masks[j, bbox[1]:bbox[3], bbox[0]:bbox[2]] = 1
+                masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
+
+            support_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
+            labels = [(temp_support_labels[i], i) for j in range(len(masks))]
+            support_labels += labels
+
+        query_augmented_imgs = []
+        query_labels = []
+
+        for i, img_path in enumerate(query_images):
+            img = Image.open(img_path).convert("RGB")
+            bboxes = filtered_annotations[img_path]
+            masks = np.zeros((len(bboxes), img.size[1], img.size[0]))
+            for j, bbox in enumerate(bboxes):
+
+                bbox = list(map(int, bbox))
+                masks[j, bbox[1]:bbox[3], bbox[0]:bbox[2]] = 1
+                masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
         
+            query_augmented_imgs += [crop_mask(img, mask, dezoom=cfg.dezoom) for mask in masks]
+            labels = [(temp_query_labels[i], i) for j in range(len(masks))]
+            query_labels += labels
+
+        support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
+        query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
+
+        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector WARNING: hardcoded
+        query_tensor = torch.zeros((len(query_augmented_imgs), 384))
+
+        with torch.inference_mode():
+            for i in range(len(support_augmented_imgs)):
+                inputs = support_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                support_tensor[i] = outputs
+
+            for i in range(len(query_augmented_imgs)):
+                inputs = query_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                query_tensor[i] = outputs
+
+        acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
+
+        L_acc.append(acc)
+        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+            
+    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
+    print("All accuracies: ", np.round(L_acc,2))
+
 def main_seed(cfg, seed): # reproduce a run with a specific seed
     # this is used to visualize the matching between the masks in the ncm
     sampler = DatasetBuilder(cfg)
@@ -457,6 +554,14 @@ def main(cfg):
 if __name__ == "__main__":
     
     print("Config:", cfg.sampler)
+
+    """
+    python main.py -t baseline -d imagenet -w
+    python main.py -t hierarchical -d imagenet -w
+    python main.py -t main -d imagenet -w
+    python main.py -t coco -d coco -w
+    python main.py -t seed -d imagenet -w -s 0
+    """
     
     import argparse
     parser = argparse.ArgumentParser()
@@ -465,6 +570,9 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", "-d", type=str, default="imagenet", help="imagenet, cub, caltech, food, cifarfs, fungi, flowers, pets")
     parser.add_argument("--seed", "-s", type=int, default=0, help="seed for the run")
     args = parser.parse_args()
+
+    if args.type == "coco":
+        args.dataset = "coco"
 
     cfg["type"] = args.type
     cfg["dataset"] = args.dataset
@@ -485,6 +593,9 @@ if __name__ == "__main__":
         main(cfg)
     elif args.type == "seed":
         main_seed(cfg, args.seed)
+
+    elif args.type == "coco":
+        main_coco(cfg)
 
     else:
         raise ValueError(f"Unknown type of experiment: {args.type}")

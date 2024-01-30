@@ -202,6 +202,35 @@ class ResizeModulo(nn.Module):
 
         
         return image
+    
+    def apply_bbox(self, bbox, sizes):
+        """
+        Apply the transformation to a bbox (format [x,y,w,h]) from sizes (format [w,h])
+        """
+
+        w, h = sizes
+        max_size = max(w,h)
+        ratio = max_size / self.target_size
+        new_w = int(w / ratio)
+        new_h = int(h / ratio)
+
+        # compute new size
+        new_w = self.patch_size * (round(new_w / self.patch_size) + 1)
+        new_h = self.patch_size * (round(new_h / self.patch_size) + 1)
+
+        # apply the transformation
+        bbox[0] = bbox[0] * new_w / w
+        bbox[1] = bbox[1] * new_h / h
+        bbox[2] = bbox[2] * new_w / w
+        bbox[3] = bbox[3] * new_h / h
+
+        bbox = list(map(int, bbox))
+
+        return bbox
+
+
+        
+
 
 class preprocess_Features(torch.nn.Module):
     # preprocess_NCM: preprocess the features for NCM

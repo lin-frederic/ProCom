@@ -28,7 +28,10 @@ from models.deepSpectralMethods import DSM
 from tools import iou, focal_loss, dice_loss
 from typing import Union
 
-import alpha_clip
+try:
+    import alpha_clip
+except:
+    print("alpha_clip not installed")
 import math
 
 

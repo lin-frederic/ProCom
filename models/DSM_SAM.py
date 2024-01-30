@@ -289,14 +289,15 @@ def main(all_in_one=False):
     support_images = [os.path.join(path, f) for f in os.listdir(path)]
 
     seed = np.random.randint(0, 1000) # 0 # 42 #
-    seed = 489
+    #seed = 489
     
     print(f"Seed: {seed}")
 
     np.random.seed(seed)
     support_images = np.random.choice(support_images, limit)
+    support_images = list(support_images)
 
-    #support_images = ["images/manchot_banane_small.png"]
+    support_images =["images/manchot_banane_small.png"]
 
     start = time.time()
 
@@ -305,7 +306,7 @@ def main(all_in_one=False):
 
         masks,points, resized_img = model(img,
                              img_path,
-                             sample_per_map=7, 
+                             sample_per_map=10, 
                              temperature=255*0.1,)
 
         if all_in_one:

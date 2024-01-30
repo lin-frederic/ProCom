@@ -147,9 +147,9 @@ class DatasetBuilder():
     return a dict where the key is the dataset name and the value is a tuple of 4 lists:
     support_images, support_labels, query_images, query_labels
 
-    support_images: list of PIL images
+    support_images: list of image paths
     support_labels: list of labels
-    query_images: list of PIL images
+    query_images: list of image paths
     query_labels: list of labels
     """
     def __init__(self, cfg) -> None:
@@ -199,6 +199,8 @@ class COCOSampler():
         for category in categories:
             if len(categories[category]) >= 4*(self.n_shots+self.n_queries): # 4*(k+m) to not always sample the same images
                 valid_categories.append(category)
+        if seed_classes is not None:
+            rd.seed(seed_classes)
         selected_categories = rd.sample(valid_categories, self.n_ways)
         selected_images = {}
         seen_images = set()
@@ -207,6 +209,8 @@ class COCOSampler():
             # take k+m images randomly from categories[category] but we need to make sure that
             # the images are not in seen_imgs to avoid duplicates among categories
             category_images = list(categories[category])
+            if seed_images is not None:
+                rd.seed(seed_images)   
             rd.shuffle(category_images)
             for img in category_images:
                 if img not in seen_images:
@@ -221,8 +225,7 @@ class COCOSampler():
             if image_id in seen_images:
                 if image_id not in selected_annotations:
                     selected_annotations[image_id] = []
-                if category_id in selected_categories:
-                    selected_annotations[image_id].append((category_id, bbox))
+                selected_annotations[image_id].append((category_id, bbox)) 
         for category in selected_categories:
             for img in selected_images[category]:
                 selected_annotations[img] = (category, selected_annotations[img]) # (img_category, [(category, bbox), ...])
@@ -246,25 +249,43 @@ class COCOSampler():
             else:
                 dataset["query"][img_category].append(selected_annotations[img_id])
         #dataset = {"support": {category: [(img_path, img_category, [(category, bbox), ...]), ...]}, "query": {category: [(img_path, img_category, [(category, bbox), ...]), ...]}
-        # turn dataset into (support_images, support_labels, query_images, query_labels)
+        return dataset
+    
+    def format(self, dataset):
+        # format the dataset to:
+        # (support_images, support_labels, query_images, query_labels, annotations)
+        # annotations: {img_path: (img_category, [(category, bbox), ...])} (for all images)
+
         support_images = []
         support_labels = []
         query_images = []
         query_labels = []
-        boxes = {}
+        annotations = {}
+
         for category in dataset["support"]:
             for img in dataset["support"][category]:
-                img_path, img_category, annotations = img
+                img_path, img_category, img_annotations = img
                 support_images.append(img_path)
                 support_labels.append(img_category)
-                boxes[img_path] = (img_category, annotations)
+                annotations[img_path] = (img_category, img_annotations)
         for category in dataset["query"]:
             for img in dataset["query"][category]:
-                img_path, img_category, annotations = img
+                img_path, img_category, img_annotations = img
                 query_images.append(img_path)
                 query_labels.append(img_category)
-                boxes[img_path] = (img_category, annotations)
-        return support_images, support_labels, query_images, query_labels, boxes
+                annotations[img_path] = (img_category, img_annotations)
+        return support_images, support_labels, query_images, query_labels, annotations
+    
+    def filter_annotations(self, annotations):
+        # filter annotations to keep only the annotations that are of the same category as the image
+        # annotations: {img_path: (img_category, [(category, bbox), ...])}
+        filtered_annotations = {}
+        for img_path in annotations:
+
+            img_category, img_annotations = annotations[img_path]
+            filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations if annotation[0]==img_category]
+        return filtered_annotations
+    
 
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
@@ -285,21 +306,12 @@ def main():
         print()
 
 def main_bis():
-    folder_explorer = FolderExplorer(cfg.paths)
+    sampler = DatasetBuilder(cfg)
+    new_dataset = sampler()
+    imagenet_sample = new_dataset["imagenet"]
 
-    paths = folder_explorer()
-
-    episodic_sampler = EpisodicSampler(paths, 
-                                       n_ways = {dataset:2 for dataset in cfg.paths.keys()},
-                                        n_shot = 1,
-                                        n_query = 2
-                                       )
-
-    episode = episodic_sampler()
-
-    imagenet_sample = episode["imagenet"]
-
-    print(len(imagenet_sample))
+    print("support images:  ", len(imagenet_sample[0]))
+    print("support labels:  ", imagenet_sample[1])
 
 
 
