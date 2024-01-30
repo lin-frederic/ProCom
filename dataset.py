@@ -246,7 +246,25 @@ class COCOSampler():
             else:
                 dataset["query"][img_category].append(selected_annotations[img_id])
         #dataset = {"support": {category: [(img_path, img_category, [(category, bbox), ...]), ...]}, "query": {category: [(img_path, img_category, [(category, bbox), ...]), ...]}
-        return dataset
+        # turn dataset into (support_images, support_labels, query_images, query_labels)
+        support_images = []
+        support_labels = []
+        query_images = []
+        query_labels = []
+        boxes = {}
+        for category in dataset["support"]:
+            for img in dataset["support"][category]:
+                img_path, img_category, annotations = img
+                support_images.append(img_path)
+                support_labels.append(img_category)
+                boxes[img_path] = (img_category, annotations)
+        for category in dataset["query"]:
+            for img in dataset["query"][category]:
+                img_path, img_category, annotations = img
+                query_images.append(img_path)
+                query_labels.append(img_category)
+                boxes[img_path] = (img_category, annotations)
+        return support_images, support_labels, query_images, query_labels, boxes
 
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
@@ -301,10 +319,14 @@ def main_ter():
 def main_coco():
     coco_sampler = COCOSampler(cfg)
     coco_sample = coco_sampler()
-    test_category = list(coco_sample["support"].keys())[0]
+    support_images, support_labels, query_images, query_labels, boxes = coco_sample
     print("support")
-    print(coco_sample["support"])
-    print(f"query class {test_category}")
-    print(coco_sample["query"][test_category])
+    print(support_images)
+    print(support_labels)
+    print("query")
+    print(query_images)
+    print(query_labels)
+    print("boxes")
+    print(boxes)
 if __name__== "__main__":
     main_coco()
