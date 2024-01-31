@@ -276,17 +276,18 @@ class COCOSampler():
                 annotations[img_path] = (img_category, img_annotations)
         return support_images, support_labels, query_images, query_labels, annotations
     
-    def filter_annotations(self, annotations):
+    def filter_annotations(self, annotations, filter=True):
         # filter annotations to keep only the annotations that are of the same category as the image
         # annotations: {img_path: (img_category, [(category, bbox), ...])}
         filtered_annotations = {}
         for img_path in annotations:
 
             img_category, img_annotations = annotations[img_path]
-            filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations if annotation[0]==img_category]
+            if filter:
+                filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations if annotation[0]==img_category]
+            else:
+                filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations] # keep all annotations
         return filtered_annotations
-    
-
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
 

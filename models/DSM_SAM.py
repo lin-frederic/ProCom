@@ -38,6 +38,7 @@ class DSM_SAM():
                  sam_model: CachedSamPredictor,
                  nms_thr=0.5,
                  area_thr=0.05, # under this threshold, the mask is discarded
+                 target_size=224
                  ):
         super().__init__()
         self.dsm_model = dsm_model
@@ -47,7 +48,7 @@ class DSM_SAM():
              T.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225])])
         
-        self.dsm_transform = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)
+        self.dsm_transform = ResizeModulo(patch_size=16, target_size=target_size, tensor_out=False)
 
         self.nms_thr = nms_thr
         self.area_thr = area_thr
@@ -268,11 +269,11 @@ def main(all_in_one=False):
                     lambda_color=1)
     dsm_model.to("cuda")
 
-    sam = get_sam_model(size="l").to("cuda")
+    sam = get_sam_model(size="b").to("cuda")
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.015)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.015, target_size=224*2)
 
     """dataset = DatasetBuilder(cfg=cfg,)
 
@@ -282,7 +283,7 @@ def main(all_in_one=False):
     print(f"Seed: {seed}")
     support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]"""
 
-    type_ = "train"
+    type_ = "val"
     path = f"/nasbrain/datasets/LVIS/{type_}2017"
     limit = 20
 
@@ -297,7 +298,7 @@ def main(all_in_one=False):
     support_images = np.random.choice(support_images, limit)
     support_images = list(support_images)
 
-    support_images =["images/manchot_banane_small.png"]
+    #support_images +=["images/manchot_banane_small.png"]
 
     start = time.time()
 
@@ -306,8 +307,8 @@ def main(all_in_one=False):
 
         masks,points, resized_img = model(img,
                              img_path,
-                             sample_per_map=10, 
-                             temperature=255*0.1,)
+                             sample_per_map=5, 
+                             temperature=255*0.05,)
 
         if all_in_one:
             # plot all masks in one figure (other one is the original image)

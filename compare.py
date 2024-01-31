@@ -35,7 +35,7 @@ for run in runs:
     if run.config["dataset"] == dataset:
         if run.config["type"] in ["hierarchical", "coco"] and (run.name == args.name_hier or args.name_hier == "none"):
             name_hier = run.id
-        elif run.config["type"] == "baseline" and (run.name == args.name_base or args.name_base == "none"):
+        elif run.config["type"] in ["baseline","coco"] and (run.name == args.name_base or args.name_base == "none"):
             name_base = run.id
         else:
             print("Wrong type")
@@ -62,8 +62,12 @@ plt.plot(t,t, 'k--')
 plt.scatter(data_base[data_base<data_hier], data_hier[data_base<data_hier], c='r', label='H > B')
 plt.scatter(data_base[data_base>data_hier], data_hier[data_base>data_hier], c='b', label='B > H')
 plt.scatter(data_base[data_base==data_hier], data_hier[data_base==data_hier], c='g', label='B = H')
-plt.xlabel('Base')
-plt.ylabel('Hierarchical')
+if args.name_base != "none":
+    name_base = args.name_base
+if args.name_hier != "none":
+    name_hier = args.name_hier
+plt.xlabel(f'Base ({name_base})')
+plt.ylabel(f'Hiera ({name_hier})')
 plt.title(f"Accuracy comparison for {dataset} dataset (b/h:{mean_base:.2f}/{mean_hier:.2f})")
 plt.legend()
 plt.savefig(f"temp/compare_{dataset}.png", dpi=300)

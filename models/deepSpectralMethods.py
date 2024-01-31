@@ -80,13 +80,14 @@ class DSM(nn.Module):
         assert len(img.shape) == 4, "The input must be a batch of images" 
 
         h, w = img.shape[2], img.shape[3]
-        h_map, w_map = img.shape[2]//16, img.shape[3]//16
+        h_map, w_map = min(img.shape[2]//16, 224//16), min(img.shape[3]//16, 224//16) # limit the size of the feature map to 224x224
         with torch.inference_mode():
             attentions = forward_dino_v1(self.model,img).squeeze(0)
             attentions = attentions[1:] #remove cls token, shape is (h_featmap*w_featmap, D)
             attentions = attentions.permute(1,0) # (D,h_featmap*w_featmap)
-            attentions = attentions.reshape(attentions.shape[0],h_map,w_map).unsqueeze(0) # (1,D,h_featmap,w_featmap)
-            attentions = nn.functional.interpolate(attentions,size=(self.downsampling_factor*h_map,self.downsampling_factor*w_map),mode="bilinear")
+
+            attentions = attentions.reshape(attentions.shape[0],img.shape[2]//16,img.shape[3]//16).unsqueeze(0) # (1,D,h_featmap,w_featmap)
+            attentions = nn.functional.interpolate(attentions,size=(self.downsampling_factor*h_map,self.downsampling_factor*w_map),mode="bilinear") # upscale the feature map to the original image size
             attentions = attentions.squeeze(0).reshape(attentions.shape[1],-1)
             attentions = attentions.permute(1,0) # (self.downsampling_factor*h_featmap*self.downsampling_factor*w_featmap,D)
             feature_similarity = (attentions @ attentions.T)/(torch.norm(attentions,dim=1).unsqueeze(1) @ torch.norm(attentions,dim=1).unsqueeze(0))
@@ -201,7 +202,7 @@ if __name__ == "__main__":
                             n_query= cfg.sampler.n_queries,
                             n_ways = cfg.sampler.n_ways,
                             n_shot = cfg.sampler.n_shots,)
-    dsm = DSM(lambda_color=1)
+    dsm = DSM(lambda_color=1.0)
     dsm.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dsm.to(device)
@@ -213,7 +214,7 @@ if __name__ == "__main__":
     support_images.append("images/manchot_banane_small.png")
     for image_path in tqdm(support_images):
         image = Image.open(image_path).convert("RGB")
-        image = ResizeModulo(patch_size=16, target_size=224, tensor_out=False)(image)
+        image = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(image)
         image_tensor = transforms.ToTensor()(image)
         image_tensor = transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                     std=[0.229, 0.224, 0.225])(image_tensor)

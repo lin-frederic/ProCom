@@ -136,7 +136,8 @@ def hierarchical_main(cfg):
     
     hierarchical = DSM_SAM(dsm_model, sam_model, 
                            nms_thr=cfg.hierarchical.nms_thr,
-                           area_thr=cfg.hierarchical.area_thr,)
+                           area_thr=cfg.hierarchical.area_thr,
+                           target_size=224*2,)
 
     transforms = T.Compose([
             ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
@@ -155,7 +156,8 @@ def hierarchical_main(cfg):
         
         if dataset == "coco":
             temp = coco_sampler(seed_classes=episode_idx, seed_images=episode_idx)
-            support_images, temp_support_labels, query_images, temp_query_labels, _ = coco_sampler.format(temp)
+            support_images, temp_support_labels, query_images, temp_query_labels, annotations = coco_sampler.format(temp)
+            filtered_annotations = coco_sampler.filter_annotations(annotations, filter=True) # for the support set (quality annotations)
         else:
 
             episode = sampler(seed_classes=episode_idx, seed_images=episode_idx)
@@ -163,12 +165,22 @@ def hierarchical_main(cfg):
 
             support_images, temp_support_labels, query_images, temp_query_labels = sample
 
+            raise ValueError("Not implemented for other datasets than coco")
+
         support_augmented_imgs = []
         support_labels = []
 
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
-            masks, _, resized_img = hierarchical(img = img, 
+
+            bboxes = filtered_annotations[img_path] # list of bboxes
+
+            for bbox in bboxes:
+                bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
+                support_augmented_imgs += [img.crop(bbox)]
+            
+
+            """masks, _, resized_img = hierarchical(img = img, 
                                     path_to_img=img_path,
                                     sample_per_map=cfg.hierarchical.sample_per_map,
                                     temperature=cfg.hierarchical.temperature)
@@ -176,10 +188,10 @@ def hierarchical_main(cfg):
             masks = masks.detach().cpu().numpy()
             #add the identity mask
             
-            masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
+            #masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
-            support_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
-            labels = [(temp_support_labels[i], i) for j in range(len(masks))]
+            support_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]"""
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes))]
             support_labels += labels
         
         query_augmented_imgs = []
@@ -194,7 +206,7 @@ def hierarchical_main(cfg):
 
             masks = masks.detach().cpu().numpy()
             #add the identity mask
-            masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
+            #masks = np.concatenate([np.ones((1,masks.shape[1],masks.shape[2])), masks], axis=0)
             #masks = masks[:cfg.top_k_masks]
             query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
             labels = [(temp_query_labels[i], i) for j in range(len(masks))]
@@ -254,15 +266,16 @@ def main_coco(cfg):
         dataset = coco_sampler(seed_classes=episode_idx, seed_images=episode_idx)
 
         support_images, temp_support_labels, query_images, temp_query_labels, annotations = coco_sampler.format(dataset)
-
-        filtered_annotations = coco_sampler.filter_annotations(annotations)
+        
+        filtered_annotations = coco_sampler.filter_annotations(annotations, filter=True) # (quality annotations)
+        unfiltered_annotations = coco_sampler.filter_annotations(annotations, filter=False) # (noisy annotations)
 
         support_augmented_imgs = []
         support_labels = []
 
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
-            bboxes = filtered_annotations[img_path] # list of bboxes
+            bboxes = unfiltered_annotations[img_path] # list of bboxes
 
             for bbox in bboxes:
                 bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]] # convert to [x1,y1,x2,y2]
@@ -276,8 +289,8 @@ def main_coco(cfg):
 
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            bboxes = filtered_annotations[img_path]
-
+            bboxes = filtered_annotations[img_path] # list of bboxes
+            
             for bbox in bboxes:
                 bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
                 query_augmented_imgs += [img.crop(bbox)]
