@@ -1,0 +1,15 @@
+matplotlib==3.5.1
+numpy==1.21.5
+opencv_python==4.9.0.80
+Pillow==10.1.0
+Pillow==9.0.1
+Pillow==10.2.0
+PyMatting==1.1.12
+python_box==7.1.1
+Requests==2.31.0
+scipy==1.8.0
+segment_anything==1.0
+torch==2.0.0
+torchvision==0.15.1
+tqdm==4.65.0
+wandb==0.15.12
