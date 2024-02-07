@@ -10,17 +10,18 @@ def remove_bg (image , mask):
     return image_masked
 
 # crop
-def crop (image, bbox, z, dezoom = 0.3):
+def crop (image, bbox, z = 0, dezoom = 0.3):
     # z is an additional margin
     if isinstance(image, Image.Image):
         image = np.array(image)
     H, W, _ = image.shape
     H_crop = bbox[3]
     W_crop = bbox[2]
-    if H_crop/H < dezoom: # if the crop is too small, we dezoom
-        H_crop = int(H*dezoom)
-    elif W_crop/W < dezoom:
-        W_crop = int(W*dezoom)
+    # dezoom 
+    #if H_crop/H < dezoom: # if the crop is too small, we dezoom
+    H_crop = int(H*dezoom)
+    #elif W_crop/W < dezoom:
+    W_crop = int(W*dezoom)
     image = image[int(bbox[1]):max(round(bbox[1]+H_crop),H), int(bbox[0]):max(round(bbox[0]+W_crop),W), :]
     return Image.fromarray(image)
 

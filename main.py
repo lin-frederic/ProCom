@@ -177,7 +177,7 @@ def hierarchical_main(cfg):
 
             for bbox in bboxes:
                 bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
-                support_augmented_imgs += [img.crop(bbox)]
+                support_augmented_imgs += [crop(img,bbox)]
             
 
             """masks, _, resized_img = hierarchical(img = img, 
@@ -275,11 +275,11 @@ def main_coco(cfg):
 
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
-            bboxes = unfiltered_annotations[img_path] # list of bboxes
+            bboxes = filtered_annotations[img_path] # list of bboxes
 
             for bbox in bboxes:
-                bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]] # convert to [x1,y1,x2,y2]
-                support_augmented_imgs += [img.crop(bbox)]
+                #bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]] # convert to [x1,y1,x2,y2]
+                support_augmented_imgs += [crop(img,bbox)]
 
             labels = [(temp_support_labels[i], i) for j in range(len(bboxes))]
             support_labels += labels
@@ -292,8 +292,8 @@ def main_coco(cfg):
             bboxes = filtered_annotations[img_path] # list of bboxes
             
             for bbox in bboxes:
-                bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
-                query_augmented_imgs += [img.crop(bbox)]
+                #bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
+                query_augmented_imgs += [crop(img, bbox)]
 
             labels = [(temp_query_labels[i], i) for j in range(len(bboxes))]
             query_labels += labels
