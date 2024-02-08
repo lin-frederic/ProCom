@@ -17,12 +17,9 @@ def crop (image, bbox, z = 0, dezoom = 0.3):
     H, W, _ = image.shape
     H_crop = bbox[3]
     W_crop = bbox[2]
+
     # dezoom 
-    #if H_crop/H < dezoom: # if the crop is too small, we dezoom
-    H_crop = int(H*dezoom)
-    #elif W_crop/W < dezoom:
-    W_crop = int(W*dezoom)
-    image = image[int(bbox[1]):max(round(bbox[1]+H_crop),H), int(bbox[0]):max(round(bbox[0]+W_crop),W), :]
+    image = image[max(round(bbox[1]-dezoom*H_crop/2),0):min(round(bbox[1]+(1+dezoom/2)*H_crop),H), max(round(bbox[0]-dezoom*H_crop/2),0):min(round(bbox[0]+(1+dezoom/2)*W_crop),W), :]
     return Image.fromarray(image)
 
 # crop with mask

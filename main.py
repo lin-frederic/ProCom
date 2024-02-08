@@ -275,7 +275,7 @@ def main_coco(cfg):
 
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
-            bboxes = filtered_annotations[img_path] # list of bboxes
+            bboxes = unfiltered_annotations[img_path] # list of bboxes
 
             for bbox in bboxes:
                 #bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]] # convert to [x1,y1,x2,y2]
@@ -283,19 +283,28 @@ def main_coco(cfg):
 
             labels = [(temp_support_labels[i], i) for j in range(len(bboxes))]
             support_labels += labels
-
+        """# plot the support augmented images
+        for img in support_augmented_imgs:
+            img.save(f"results/{uuid4()}.png")
+            
+        exit()"""
+            
+        
+        
         query_augmented_imgs = []
         query_labels = []
 
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            bboxes = filtered_annotations[img_path] # list of bboxes
+            """bboxes = unfiltered_annotations[img_path] # list of bboxes
             
             for bbox in bboxes:
                 #bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]]
                 query_augmented_imgs += [crop(img, bbox)]
-
-            labels = [(temp_query_labels[i], i) for j in range(len(bboxes))]
+"""
+            query_augmented_imgs += [img]
+            labels = [(temp_query_labels[i], i) for j in range(1)]
+            #range(len(bboxes))]
             query_labels += labels
 
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
@@ -314,7 +323,8 @@ def main_coco(cfg):
                 inputs = query_augmented_imgs[i].unsqueeze(0)
                 outputs = model(inputs).squeeze(0)
                 query_tensor[i] = outputs
-
+        
+        #Jules 
         acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
 
         L_acc.append(acc)
