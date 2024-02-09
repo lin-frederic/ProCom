@@ -12,10 +12,11 @@ config = {
         "fungi" : "/nasbrain/datasets/fungi",
         "flowers" : "/nasbrain/datasets/oxford_flowers",
         "pets" : "/nasbrain/datasets/oxford_pets",
-        "coco" : "/nasbrain/datasets/coco_full"
+        "coco" : "/nasbrain/datasets/coco_full",
+        "pascalVOC" : "/nasbrain/datasets/VOC2012"
     },
     "sampler" : {
-        "n_ways" : None, # if None, will be set to 5 for all datasets
+        "n_ways" : 5,
         
         "n_shots" : 1,
         "n_queries" : 15,

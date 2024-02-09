@@ -1,5 +1,5 @@
 import torch
-from dataset import DatasetBuilder, COCOSampler
+from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
@@ -276,12 +276,12 @@ def main_coco(cfg):
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
             bboxes = unfiltered_annotations[img_path] # list of bboxes
-
+            support_augmented_imgs += [img] # add the original image
             for bbox in bboxes:
                 #bbox = [bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]] # convert to [x1,y1,x2,y2]
                 support_augmented_imgs += [crop(img,bbox)]
 
-            labels = [(temp_support_labels[i], i) for j in range(len(bboxes))]
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
             support_labels += labels
         """# plot the support augmented images
         for img in support_augmented_imgs:
@@ -330,6 +330,129 @@ def main_coco(cfg):
         L_acc.append(acc)
         pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
 
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+            
+    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
+    print("All accuracies: ", np.round(L_acc,2))
+
+def main_pascalVOC(cfg):
+    pascalVOC_sampler = PascalVOCSampler(cfg)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = get_model(size="s",use_v2=False).to(device)
+
+    transforms = T.Compose([
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
+            T.Normalize(mean=[0.485,0.456,0.406],
+                        std=[0.229,0.224,0.225]) # imagenet mean and std
+        ])
+    
+    # PascalVOC dataset
+
+    L_acc = []
+    ncm = NCM()
+
+    pbar = tqdm(range(cfg.n_runs), desc="Runs")
+
+    for episode_idx in pbar:
+        support_images, temp_support_labels, query_images, temp_query_labels, annotations = pascalVOC_sampler(seed_classes=episode_idx, seed_images=episode_idx)
+        filtered_annotations = pascalVOC_sampler.filter_annotations(annotations, filter=True) # (quality annotations)
+        unfiltered_annotations = pascalVOC_sampler.filter_annotations(annotations, filter=False)
+        support_augmented_imgs = []
+        support_labels = []
+        for i, img_path in enumerate(support_images):
+            img = Image.open(img_path).convert("RGB")
+            bboxes = filtered_annotations[img_path] # list of bboxes
+            support_augmented_imgs += [img] # add the original image
+            for bbox in bboxes:
+                # convert to [x,y,w,h]
+                bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
+                support_augmented_imgs += [crop(img,bbox,dezoom=0)]
+
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+            support_labels += labels
+        """# plot the support augmented images
+        for i,img in enumerate(support_augmented_imgs):
+            img.save(f"results/{i}_{uuid4()}.png")
+            
+        exit()"""
+        query_augmented_imgs = []
+        query_labels = []
+        
+        for i, img_path in enumerate(query_images):
+            img = Image.open(img_path).convert("RGB")
+            bboxes = unfiltered_annotations[img_path] # list of bboxes
+            query_augmented_imgs += [img]
+            for bbox in bboxes:
+                bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
+                query_augmented_imgs += [crop(img, bbox, dezoom=0)]
+
+            labels = [(temp_query_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+            query_labels += labels
+            
+        support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
+        query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
+
+        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector WARNING: hardcoded
+        query_tensor = torch.zeros((len(query_augmented_imgs), 384))
+        
+        with torch.inference_mode():
+            for i in range(len(support_augmented_imgs)):
+                inputs = support_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                support_tensor[i] = outputs
+
+            for i in range(len(query_augmented_imgs)):
+                inputs = query_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                query_tensor[i] = outputs
+        
+        # use a linear classifier
+        classifier = torch.nn.Linear(384, 5).to(device) # 5 classes
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
+        # train the classifier on augmented support set
+        train_labels, support_annotation_idx = [label[0] for label in support_labels], [label[1] for label in support_labels]
+        query_labels, query_annotation_idx = [label[0] for label in query_labels], [label[1] for label in query_labels]
+        unique_labels = list(set(train_labels))
+        train_labels = [unique_labels.index(label) for label in train_labels]
+        query_labels = [unique_labels.index(label) for label in query_labels]
+        original_query_labels = [unique_labels.index(label) for label in temp_query_labels]
+        train_labels = torch.tensor(train_labels)
+        query_labels = torch.tensor(query_labels)
+        
+        for i in tqdm(range(10)):
+            optimizer.zero_grad()
+            outputs = classifier(support_tensor.to(device))
+            loss = criterion(outputs, torch.tensor(train_labels).to(device))
+            loss.backward()
+            optimizer.step()
+        # test the classifier on the support set
+        acc = 0
+        outputs = classifier(query_tensor.to(device))
+        # as we have multiple annotations per image, we classify the image with the highest score among the annotations
+        img_classif = {}
+        for i in range(len(query_labels)):
+            img_idx = query_annotation_idx[i]
+            if img_idx not in img_classif:
+                img_classif[img_idx] = []
+            # find the index of the highest logit for this annotation
+            class_idx = torch.argmax(outputs[i]).item()
+            img_classif[img_idx].append((class_idx, outputs[i][class_idx].item())) # class_idx, score
+        for img in img_classif:
+            # find the class with the highest score
+            idx = 0
+            for i in range(len(img_classif[img])):
+                if img_classif[img][i][1] > img_classif[img][idx][1]:
+                    idx = i
+            img_classif[img] = img_classif[img][idx][0]
+            acc += int(img_classif[img] == original_query_labels[img])
+        acc = acc/len(img_classif)
+        #acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
+        L_acc.append(acc)
+        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
         if cfg.wandb:
             wandb.log({"running_accuracy": acc,
                         "average_accuracy": np.mean(L_acc),
@@ -582,6 +705,7 @@ if __name__ == "__main__":
     python main.py -t hierarchical -d imagenet -w
     python main.py -t main -d imagenet -w
     python main.py -t coco -d coco -w
+    python main.py -t pascalVOC -d pascalVOC -w
     python main.py -t seed -d imagenet -w -s 0
     """
     
@@ -618,6 +742,9 @@ if __name__ == "__main__":
 
     elif args.type == "coco":
         main_coco(cfg)
+    
+    elif args.type == "pascalVOC":
+        main_pascalVOC(cfg)
 
     else:
         raise ValueError(f"Unknown type of experiment: {args.type}")

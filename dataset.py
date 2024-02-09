@@ -4,7 +4,8 @@ from typing import Any
 from config import cfg
 import json
 from PIL import Image
-
+import xml.etree.ElementTree as ET
+from tqdm import tqdm
 class FolderExplorer():
     def __init__(self, dataset_paths) -> None:
         self.dataset_paths = dataset_paths
@@ -288,6 +289,83 @@ class COCOSampler():
             else:
                 filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations] # keep all annotations
         return filtered_annotations
+class PascalVOCSampler():
+    def __init__(self, cfg):
+        self.path = cfg.paths["pascalVOC"]
+        self.n_ways = 5
+        self.n_shots = cfg.sampler.n_shots
+        self.n_queries = cfg.sampler.n_queries
+    def __call__(self, seed_classes = None, seed_images = None):
+        images = os.listdir(f"{self.path}/JPEGImages")
+        annotations = os.listdir(f"{self.path}/Annotations")
+        classes_trainval = os.listdir(f"{self.path}/ImageSets/Main")
+        classes = set()
+        for classe in classes_trainval:
+            #strip the word after the underscore
+            if classe not in ["train.txt","trainval.txt","val.txt"]:
+                classes.add(classe.split("_")[0])
+        #sample n_ways classes
+        if seed_classes is not None:
+            rd.seed(seed_classes)
+        selected_classes = rd.sample(classes, self.n_ways)
+        dataset = {}
+        dataset["support"] = {}
+        dataset["query"] = {}
+        for classe in selected_classes:
+            classe_path = f"{self.path}/ImageSets/Main/{classe}_val.txt"
+            with open(classe_path, "r") as f:
+                images_classe = f.readlines()
+                images_classe = [img.split()[0] for img in images_classe if img.split()[1]=="1"]
+                if seed_images is not None:
+                    rd.seed(seed_images)
+                selected_images = rd.sample(images_classe, self.n_shots+self.n_queries)
+                dataset["support"][classe] = selected_images[:self.n_shots]
+                dataset["query"][classe] = selected_images[self.n_shots:]
+        support_images = []
+        support_labels = []
+        query_images = []
+        query_labels = []
+        annotations = {}
+        for classe in dataset["support"]:
+            for img in dataset["support"][classe]:
+                img_path = f"{self.path}/JPEGImages/{img}.jpg"
+                support_images.append(img_path)
+                support_labels.append(classe)
+                with open(f"{self.path}/Annotations/{img}.xml") as f:
+                    tree = ET.parse(f)
+                    root = tree.getroot()
+                    bboxes = []
+                    for obj in root.findall("object"):
+                        bbox = obj.find("bndbox")
+                        bboxes.append((obj.find("name").text, (int(bbox.find("xmin").text), int(bbox.find("ymin").text), int(bbox.find("xmax").text), int(bbox.find("ymax").text))))
+                    annotations[img_path] = (classe, bboxes)
+        for classe in dataset["query"]:
+            for img in dataset["query"][classe]:
+                img_path = f"{self.path}/JPEGImages/{img}.jpg"
+                query_images.append(img_path)
+                query_labels.append(classe)
+                with open(f"{self.path}/Annotations/{img}.xml") as f:
+                    tree = ET.parse(f)
+                    root = tree.getroot()
+                    bboxes = []
+                    for obj in root.findall("object"):
+                        bbox = obj.find("bndbox")
+                        bboxes.append((obj.find("name").text, (int(bbox.find("xmin").text), int(bbox.find("ymin").text), int(bbox.find("xmax").text), int(bbox.find("ymax").text))))
+                    annotations[img_path] = (classe, bboxes)
+        return support_images, support_labels, query_images, query_labels, annotations  
+    def filter_annotations(self, annotations, filter=True):
+        # filter annotations to keep only the annotations that are of the same category as the image
+        # annotations: {img_path: (img_category, [(category, bbox), ...])}
+        filtered_annotations = {}
+        for img_path in annotations:
+
+            img_category, img_annotations = annotations[img_path]
+            if filter:
+                filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations if annotation[0]==img_category]
+            else:
+                filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations] # keep all annotations
+        return filtered_annotations
+        
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
 
@@ -341,5 +419,13 @@ def main_coco():
     print(query_labels)
     print("boxes")
     print(boxes)
+def main_pascal():
+    pascal_sampler = PascalVOCSampler(cfg)
+    support_images, support_labels, query_images, query_labels, annotations = pascal_sampler()
+    print(support_images)
+    print(support_labels)
+    print(query_images)
+    print(query_labels)
+    print(annotations)
 if __name__== "__main__":
-    main_coco()
+    main_pascal()
