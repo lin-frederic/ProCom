@@ -3,7 +3,7 @@ from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
-from classif.linear import Linear
+from classif.linear import MyLinear
 from tools import ResizeModulo
 from torchvision import transforms as T
 from tqdm import tqdm
@@ -354,7 +354,7 @@ def main_pascalVOC(cfg):
 
     L_acc = []
     ncm = NCM()
-    linear = Linear()
+    linear = MyLinear()
 
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
 

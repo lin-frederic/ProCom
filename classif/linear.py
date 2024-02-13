@@ -1,14 +1,23 @@
 import torch
 from tools import preprocess_Features
 from tqdm import tqdm
-class Linear(torch.nn.Module):
-    def __init__(self, top_k=1,n_epochs=40000,lr = 0.001, temperature = 0.01):
-        super(Linear, self).__init__()
+
+
+import sys
+import os
+path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if path not in sys.path:sys.path.append(path)
+from classif.mlp import MLP
+
+
+class MyLinear(torch.nn.Module):
+    def __init__(self, top_k=1,n_epochs=40000,lr = 0.001, logit_scale=4.60517):
+        super(MyLinear, self).__init__()
         self.preprocess_layer = preprocess_Features()
         self.top_k = top_k
         self.n_epochs = n_epochs
         self.lr = lr
-        self.temperature = temperature
+        self.logit_scale = logit_scale
     def forward(self, support_features, query_features, support_labels, query_labels, temp_query_labels, encode_labels=False):
         # support_features: list of features, as a tensor of shape [n_shot, d]
         # support_labels: list of (class,image_index)
@@ -23,7 +32,7 @@ class Linear(torch.nn.Module):
             original_query_labels = [unique_labels.index(label) for label in temp_query_labels]
             train_labels = torch.tensor(train_labels)
             query_labels = torch.tensor(query_labels)
-        classifier = torch.nn.Linear(support_features.shape[1], len(unique_labels))
+        classifier = MLP(support_features, unique_labels)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(classifier.parameters(), lr=self.lr)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,19 +41,20 @@ class Linear(torch.nn.Module):
         for epoch in range(self.n_epochs):
             optimizer.zero_grad()
             output = classifier(support_features.to(device))
-            loss = criterion(output, torch.tensor(train_labels).to(device))
+            loss = criterion(output, train_labels.to(device))
             loss.backward()
             optimizer.step()
         outputs = classifier(support_features.to(device))
         # transform into logit
-        outputs = torch.nn.functional.softmax(outputs/self.temperature, dim=1)
+        logit_scale = torch.FloatTensor([self.logit_scale]).to(device)
+        outputs = torch.nn.functional.softmax(outputs*logit_scale.exp(), dim=1)
         _, predicted = torch.max(outputs, 1)
         acc = (predicted == train_labels.to(device)).sum().item() / len(train_labels)
-        print(f"Accuracy on support set: {acc}")
+        #print(f"Accuracy on support set: {acc}")
         acc = 0
         outputs = classifier(query_features.to(device))
         # transform into logit
-        outputs = torch.nn.functional.softmax(outputs/self.temperature, dim=1)
+        outputs = torch.nn.functional.softmax(outputs*logit_scale.exp(), dim=1)
         img_classif = {}
         for i in range(len(query_labels)):
             img_idx = query_annotation_idx[i]
