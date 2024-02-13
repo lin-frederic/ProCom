@@ -21,7 +21,7 @@ class NCM(torch.nn.Module):
         # output: [n_query,class] each element is the predicted class for each query
         # Preprocess the features
         
-        support_features, query_features = self.preprocess_NCM_layer(support_features, query_features)
+        #support_features, query_features = self.preprocess_NCM_layer(support_features, query_features)
         acc = 0
         # calculate similarity between each query feature and each support feature
         if use_cosine:
