@@ -24,7 +24,7 @@ from PIL import Image
 import cv2
 
 from config import cfg
-from dataset import DatasetBuilder
+from dataset import DatasetBuilder, PascalVOCSampler
 
 import matplotlib.pyplot as plt
 import numpy as np 
@@ -264,7 +264,7 @@ class DSM_SAM():
         return self.forward(img, path_to_img, sample_per_map, temperature, use_cache)
     
 
-def main(all_in_one=False):
+def main(all_in_one=False, mode="pascal"):
     dsm_model = DSM(n_eigenvectors=5, 
                     lambda_color=1)
     dsm_model.to("cuda")
@@ -273,7 +273,7 @@ def main(all_in_one=False):
 
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
     
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.015, target_size=224*2)
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2)
 
     """dataset = DatasetBuilder(cfg=cfg,)
 
@@ -283,20 +283,26 @@ def main(all_in_one=False):
     print(f"Seed: {seed}")
     support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]"""
 
-    type_ = "val"
-    path = f"/nasbrain/datasets/LVIS/{type_}2017"
-    limit = 20
+    if mode == "pascal":
+        cfg.sampler.n_ways = 20
+        sampler = PascalVOCSampler(cfg)
+        support_images, _, _, _, _ = sampler()
 
-    support_images = [os.path.join(path, f) for f in os.listdir(path)]
+    else:
+        type_ = "val"
+        path = f"/nasbrain/datasets/LVIS/{type_}2017"
+        limit = 20
 
-    seed = np.random.randint(0, 1000) # 0 # 42 #
-    #seed = 489
-    
-    print(f"Seed: {seed}")
+        support_images = [os.path.join(path, f) for f in os.listdir(path)]
 
-    np.random.seed(seed)
-    support_images = np.random.choice(support_images, limit)
-    support_images = list(support_images)
+        seed = np.random.randint(0, 1000) # 0 # 42 #
+        #seed = 489
+        
+        print(f"Seed: {seed}")
+
+        np.random.seed(seed)
+        support_images = np.random.choice(support_images, limit)
+        support_images = list(support_images)
 
     #support_images +=["images/manchot_banane_small.png"]
 
@@ -307,8 +313,8 @@ def main(all_in_one=False):
 
         masks,points, resized_img = model(img,
                              img_path,
-                             sample_per_map=5, 
-                             temperature=255*0.05,)
+                             sample_per_map=10, 
+                             temperature=255*0.1,)
 
         if all_in_one:
             # plot all masks in one figure (other one is the original image)
@@ -369,5 +375,5 @@ def main(all_in_one=False):
 
 
 if __name__ == "__main__":
-    main(all_in_one=True)
+    main(all_in_one=True, mode="pascal")
     print("Done!")

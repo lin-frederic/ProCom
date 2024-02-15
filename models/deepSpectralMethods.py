@@ -19,6 +19,7 @@ import torch.nn as nn
 import cv2
 from tqdm import tqdm
 from tools import ResizeModulo
+from dataset import PascalVOCSampler
 
 from scipy.ndimage import center_of_mass # find the baricenter of the image
 
@@ -193,25 +194,39 @@ def softmax_2d(x, temperature=1.0):
     return softmax_x
 
 
-if __name__ == "__main__":
+def main(mode):
     if not os.path.exists("temp_dsm"):
         os.mkdir("temp_dsm")
-    folder_explorer = FolderExplorer(cfg.paths)
-    paths = folder_explorer()
-    sampler = EpisodicSampler(paths = paths,
-                            n_query= cfg.sampler.n_queries,
-                            n_ways = cfg.sampler.n_ways,
-                            n_shot = cfg.sampler.n_shots,)
+
+    if mode=="imagenet":
+    
+        folder_explorer = FolderExplorer(cfg.paths)
+        paths = folder_explorer()
+        sampler = EpisodicSampler(paths = paths,
+                                n_query= cfg.sampler.n_queries,
+                                n_ways = cfg.sampler.n_ways,
+                                n_shot = 5,)
+        
+        # dataset
+        episode = sampler()
+        imagenet_sample = episode["imagenet"]
+        # support set
+        support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
+        
+    elif mode=="pascal":
+        sampler = PascalVOCSampler(cfg)
+        support_images, _, _, _, _ = sampler()
+
+        
     dsm = DSM(lambda_color=1.0)
     dsm.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dsm.to(device)
-    # dataset
-    episode = sampler(seed_classes=123, seed_images=42)
-    imagenet_sample = episode["imagenet"]
-    # support set
-    support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
-    support_images.append("images/manchot_banane_small.png")
+
+
+    #support_images.append("images/manchot_banane_small.png")
+
+
     for image_path in tqdm(support_images):
         image = Image.open(image_path).convert("RGB")
         image = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(image)
@@ -225,8 +240,17 @@ if __name__ == "__main__":
         fig, axs = plt.subplots(3, eigenvectors.shape[0], figsize=(15,15))
 
         # eigenvectors        
+        kernel_s = 3 
+
         for i,ax in enumerate(axs[0]):
-            ax.imshow(eigenvectors[i],cmap="viridis")
+
+            density = softmax_2d(eigenvectors[i], temperature=255)
+            density =  scipy.signal.convolve2d(density, np.ones((kernel_s,kernel_s)), mode="same")
+
+            density = density/np.max(density)
+
+
+            ax.imshow(density,cmap="viridis")
             
             rescaled = softmax_2d(eigenvectors[i], temperature=0.1)
 
@@ -278,4 +302,7 @@ if __name__ == "__main__":
         plt.savefig(f"temp_dsm/eigenvectors_{image_path.split('/')[-1]}")
         plt.close()
 
-        
+
+
+if __name__ == "__main__":
+    main("pascal")

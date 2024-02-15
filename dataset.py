@@ -357,7 +357,7 @@ class ImageNetLocSampler():
 class PascalVOCSampler():
     def __init__(self, cfg):
         self.path = cfg.paths["pascalVOC"]
-        self.n_ways = 5
+        self.n_ways = cfg.sampler.n_ways
         self.n_shots = cfg.sampler.n_shots
         self.n_queries = cfg.sampler.n_queries
     def __call__(self, seed_classes = None, seed_images = None):
