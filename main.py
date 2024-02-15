@@ -413,7 +413,7 @@ def main_pascalVOC(cfg):
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
                 query_augmented_imgs += [crop(img, bbox, dezoom=0)]"""
 
-            labels = [(temp_query_labels[i], i) for j in range(len(masks))]#len(bboxes)+1)] #bounding box + original image
+            labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
             query_labels += labels
             
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
