@@ -357,7 +357,7 @@ class ImageNetLocSampler():
 class PascalVOCSampler():
     def __init__(self, cfg):
         self.path = cfg.paths["pascalVOC"]
-        self.n_ways = cfg.sampler.n_ways
+        self.n_ways = cfg.sampler.n_ways["pascalVOC"]
         self.n_shots = cfg.sampler.n_shots
         self.n_queries = cfg.sampler.n_queries
     def __call__(self, seed_classes = None, seed_images = None):
@@ -372,6 +372,10 @@ class PascalVOCSampler():
         #sample n_ways classes
         if seed_classes is not None:
             rd.seed(seed_classes)
+            # because we want to be consistent with the seed, we convert the set to a list
+            # then, we sort it because the hash of a set is not consistent
+            classes = list(classes)
+            classes.sort()
         selected_classes = rd.sample(classes, self.n_ways)
         dataset = {}
         dataset["support"] = {}
@@ -486,12 +490,12 @@ def main_coco():
     print(boxes)
 def main_pascal():
     pascal_sampler = PascalVOCSampler(cfg)
-    support_images, support_labels, query_images, query_labels, annotations = pascal_sampler()
+    support_images, support_labels, query_images, query_labels, annotations = pascal_sampler(seed_classes=1, seed_images=1)
     print(support_images)
     print(support_labels)
-    print(query_images)
-    print(query_labels)
-    print(annotations)
+    #print(query_images)
+    #print(query_labels)
+    #print(annotations)
 def main_imagenetloc():
     imagenetloc_sampler = ImageNetLocSampler(cfg)
     support_images, support_labels, query_images, query_labels, annotations = imagenetloc_sampler()
@@ -501,4 +505,4 @@ def main_imagenetloc():
     print(query_labels)
     print(annotations)
 if __name__== "__main__":
-    main_imagenetloc()
+    main_pascal()
