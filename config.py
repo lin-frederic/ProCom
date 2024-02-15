@@ -5,6 +5,7 @@ config = {
     "wandb" : False,
     "paths" : {
         "imagenet" : "/nasbrain/datasets/imagenet/images/val",
+        "imagenetloc" : "/nasbrain/datasets/imagenetloc/",
         "cub" : "/nasbrain/datasets/CUB_200_2011",
         "caltech" : "/nasbrain/datasets/caltech-101",
         "food" : "/nasbrain/datasets/food-101",
