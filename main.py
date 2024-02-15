@@ -1,5 +1,5 @@
 import torch
-from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler
+from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler, ImageNetLocSampler
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
@@ -436,6 +436,88 @@ def main_pascalVOC(cfg):
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
 
+def main_imagenetloc(cfg):
+    imagenetloc_sampler = ImageNetLocSampler(cfg)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = get_model(size="s",use_v2=False).to(device)
+
+    transforms = T.Compose([
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
+            T.Normalize(mean=[0.485,0.456,0.406],
+                        std=[0.229,0.224,0.225]) # imagenet mean and std
+        ])
+
+    L_acc = []
+    ncm = NCM()
+    linear = MyLinear()
+
+    pbar = tqdm(range(cfg.n_runs), desc="Runs")
+
+    for episode_idx in pbar:
+        support_images, temp_support_labels, query_images, temp_query_labels, annotations = imagenetloc_sampler(seed_classes=episode_idx, seed_images=episode_idx)
+        filtered_annotations = imagenetloc_sampler.filter_annotations(annotations, filter=True) # (quality annotations)
+        support_augmented_imgs = []
+        support_labels = []
+        for i, img_path in enumerate(support_images):
+            img = Image.open(img_path).convert("RGB")
+            support_augmented_imgs += [img]
+            labels = [(temp_support_labels[i], i) for j in range(1)] #bounding box + original image
+            support_labels += labels
+
+        query_augmented_imgs = []
+        query_labels = []
+
+        for i, img_path in enumerate(query_images):
+            img = Image.open(img_path).convert("RGB")
+            query_augmented_imgs += [img]
+            labels = [(temp_query_labels[i], i) for j in range(1)]
+            query_labels += labels
+
+        support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
+        query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
+        augmentations = [T.RandomHorizontalFlip(p=1), T.RandomVerticalFlip(p=1), T.RandomRotation(90)]
+
+        for i in range(len(support_augmented_imgs)):
+            img = support_augmented_imgs[i]
+            label = support_labels[i]
+            for i in range(0):
+                for aug in augmentations:
+                    img = aug(img)
+                    support_augmented_imgs.append(img)
+                    support_labels.append(label)
+
+        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector WARNING: hardcoded
+        query_tensor = torch.zeros((len(query_augmented_imgs), 384))
+
+        with torch.inference_mode():
+            for i in range(len(support_augmented_imgs)):
+                inputs = support_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                support_tensor[i] = outputs
+
+            for i in range(len(query_augmented_imgs)):
+                inputs = query_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                query_tensor[i] = outputs
+
+        use_linear = True
+        if use_linear:
+            acc = linear(support_tensor, query_tensor, support_labels, query_labels, temp_query_labels, encode_labels=True)
+        else:
+            acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
+        L_acc.append(acc)
+        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
+    print("All accuracies: ", np.round(L_acc,2))
+
+
+
+
+
 def main_seed(cfg, seed): # reproduce a run with a specific seed
     # this is used to visualize the matching between the masks in the ncm
     sampler = DatasetBuilder(cfg)
@@ -720,6 +802,9 @@ if __name__ == "__main__":
     
     elif args.type == "pascalVOC":
         main_pascalVOC(cfg)
+
+    elif args.type == "imagenetloc":
+        main_imagenetloc(cfg)
 
     else:
         raise ValueError(f"Unknown type of experiment: {args.type}")
