@@ -343,7 +343,21 @@ def main_pascalVOC(cfg):
     pascalVOC_sampler = PascalVOCSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
+    dsm_model = DSM(model=model, # same model as the one used for the classification
+                    n_eigenvectors=cfg.dsm.n_eigenvectors,
+                    lambda_color=cfg.dsm.lambda_color)
+    dsm_model.to(device)
+    sam = get_sam_model(size="b").to(device)  
+    sam_model = CachedSamPredictor(sam_model = sam, 
+                                   path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
+                                   json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
+    hierarchical = DSM_SAM(dsm_model, sam_model, 
+                           nms_thr=cfg.hierarchical.nms_thr,
+                           area_thr=cfg.hierarchical.area_thr,
+                           target_size=224*2,)  
+    
 
+    
     transforms = T.Compose([
             ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
             T.Normalize(mean=[0.485,0.456,0.406],
@@ -367,13 +381,13 @@ def main_pascalVOC(cfg):
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
             support_augmented_imgs += [img] # add the original image
-            """bboxes = filtered_annotations[img_path] # list of bboxes
+            bboxes = filtered_annotations[img_path] # list of bboxes
             for bbox in bboxes:
                 # convert to [x,y,w,h]
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
-                support_augmented_imgs += [crop(img,bbox,dezoom=0)]"""
+                support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
 
-            labels = [(temp_support_labels[i], i) for j in range(1)]#len(bboxes)+1)] #bounding box + original image
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
             support_labels += labels
         """# plot the support augmented images
         for i,img in enumerate(support_augmented_imgs):
@@ -386,12 +400,20 @@ def main_pascalVOC(cfg):
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
             #bboxes = unfiltered_annotations[img_path] # list of bboxes
+            masks, _, resized_img =hierarchical.forward(img = img, 
+                                            path_to_img=img_path,
+                                            sample_per_map=cfg.hierarchical.sample_per_map,
+                                            temperature=cfg.hierarchical.temperature)
+            masks = masks.detach().cpu().numpy()
+
             query_augmented_imgs += [img]
+            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
+
             """for bbox in bboxes:
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
                 query_augmented_imgs += [crop(img, bbox, dezoom=0)]"""
 
-            labels = [(temp_query_labels[i], i) for j in range(1)]#len(bboxes)+1)] #bounding box + original image
+            labels = [(temp_query_labels[i], i) for j in range(len(masks))]#len(bboxes)+1)] #bounding box + original image
             query_labels += labels
             
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
@@ -421,7 +443,7 @@ def main_pascalVOC(cfg):
                 outputs = model(inputs).squeeze(0)
                 query_tensor[i] = outputs
         # use a linear classifier
-        use_linear = True
+        use_linear = False
         if use_linear:
             acc = linear(support_tensor, query_tensor, support_labels, query_labels, temp_query_labels, encode_labels=True)
         else:
