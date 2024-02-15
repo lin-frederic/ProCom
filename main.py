@@ -794,6 +794,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb", "-w", action="store_true", help="use wandb")
     parser.add_argument("--dataset", "-d", type=str, default="imagenet", help="imagenet, cub, caltech, food, cifarfs, fungi, flowers, pets")
     parser.add_argument("--seed", "-s", type=int, default=0, help="seed for the run")
+    parser.add_argument("--message", "-m", type=str, default="", help="message for the run, only used with wandb")
     args = parser.parse_args()
 
     if args.type == "coco":
@@ -804,7 +805,7 @@ if __name__ == "__main__":
 
     if args.wandb:
         wandb.login()
-        wandb.init(project="procom-transformers", entity="procom")
+        wandb.init(project="procom-transformers", entity="procom", notes=args.message)
         cfg["wandb"] = True
         wandb.config.update(cfg)
     
