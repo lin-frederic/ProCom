@@ -17,7 +17,6 @@ def crop (image, bbox, z = 0, dezoom = 0.3):
     H, W, _ = image.shape
     H_crop = bbox[3]
     W_crop = bbox[2]
-
     # dezoom 
     image = image[max(round(bbox[1]-dezoom*H_crop/2),0):min(round(bbox[1]+(1+dezoom/2)*H_crop),H), max(round(bbox[0]-dezoom*H_crop/2),0):min(round(bbox[0]+(1+dezoom/2)*W_crop),W), :]
     return Image.fromarray(image)

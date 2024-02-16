@@ -434,7 +434,88 @@ class PascalVOCSampler():
             else:
                 filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations] # keep all annotations
         return filtered_annotations
+class CUBSampler(): # with bbox
+    def __init__(self, cfg):
+        self.path = cfg.paths["cub"]
+        self.n_ways = cfg.sampler.n_ways["cub"]
+        self.n_shots = cfg.sampler.n_shots
+        self.n_queries = cfg.sampler.n_queries
+    def __call__(self, seed_classes = None, seed_images = None):
+        # find all the classes
+        with open(os.path.join(self.path, "classes.txt")) as f:
+            classes = f.readlines()
+            classes = [int(classe.split()[0]) for classe in classes] # get only the ordinal encoding of the class
+        # find all the images and their classes
+        with open(os.path.join(self.path,"image_class_labels.txt")) as f:
+            image_class_labels = f.readlines()
+        # sample n_ways classes
+        if seed_classes is not None:
+            rd.seed(seed_classes)
+            # because we want to be consistent with the seed, we convert the set to a list
+            # then, we sort it because the hash of a set is not consistent
+            classes = list(classes)
+            classes.sort()
+        selected_classes = rd.sample(classes, self.n_ways)
+        dataset = {}
+        dataset["support"] = {}
+        dataset["query"] = {}
+        # find the images of the selected classes
+        selected_images = {}
+        for line in image_class_labels:
+            img, classe = int(line.split()[0]), int(line.split()[1])
+            if classe in selected_classes:
+                if classe not in selected_images:
+                    selected_images[classe] = []
+                selected_images[classe].append(img)
+        # sample n_shots+n_queries images for each class
+        for classe in selected_images:
+            if seed_images is not None:
+                rd.seed(seed_images)
+            selected_images[classe] = rd.sample(selected_images[classe], self.n_shots+self.n_queries)
+            dataset["support"][classe] = selected_images[classe][:self.n_shots]
+            dataset["query"][classe] = selected_images[classe][self.n_shots:]
+        # find the images path
+        with open(os.path.join(self.path, "images.txt")) as f:
+            images = f.readlines()
+            images = [(int(img.split()[0]), img.split()[1]) for img in images] # (img_id, img_path)
+        with open(os.path.join(self.path, "bounding_boxes.txt")) as f:
+            bboxes = f.readlines()
+            bboxes = [(int(float(bbox.split()[0])), int(float(bbox.split()[1])), int(float(bbox.split()[2])), int(float(bbox.split()[3])), int(float(bbox.split()[4]))) for bbox in bboxes] # (img_id, x, y, width, height)
+        support_images = []
+        support_labels = []
+        query_images = []
+        query_labels = []
+        annotations = {}
+        for type in ["support","query"]:
+            for classe in dataset[type]:
+                for img_id in dataset[type][classe]:
+                    for (img_id2, img_path) in images:
+                        if img_id == img_id2:
+                            img_path_saved = os.path.join(self.path, "images", img_path)
+                            if type == "support":
+                                support_images.append(img_path_saved)
+                                support_labels.append(classe)
+                            else:
+                                query_images.append(img_path_saved)
+                                query_labels.append(classe)
+                            for bbox in bboxes:
+                                if bbox[0] == img_id:
+                                    annotations[img_path_saved] = (classe,[(classe, bbox[1:])]) # (img_category, [(category, bbox), ...]), here we have only one bbox
+        return support_images, support_labels, query_images, query_labels, annotations
+    def filter_annotations(self, annotations, filter=True):
+        # filter annotations to keep only the annotations that are of the same category as the image
+        # annotations: {img_path: (img_category, [(category, bbox), ...])}
+        filtered_annotations = {}
+        for img_path in annotations:
+
+            img_category, img_annotations = annotations[img_path]
+            if filter:
+                filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations if annotation[0]==img_category]
+            else:
+                filtered_annotations[img_path] = [annotation[1] for annotation in img_annotations]
+        return filtered_annotations
         
+    
 def main():
     folder_explorer = FolderExplorer(cfg.paths)
 
@@ -504,5 +585,15 @@ def main_imagenetloc():
     print(query_images)
     print(query_labels)
     print(annotations)
+    
+def main_cub():
+    cub_sampler = CUBSampler(cfg)
+    support_images, support_labels, query_images, query_labels, annotations = cub_sampler()
+    print(support_images)
+    print(support_labels)
+    print(query_images)
+    print(query_labels)
+    print(annotations)
+
 if __name__== "__main__":
-    main_pascal()
+    main_cub()

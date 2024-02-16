@@ -1,5 +1,5 @@
 import torch
-from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler, ImageNetLocSampler
+from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler, ImageNetLocSampler, CUBSampler
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
@@ -145,7 +145,7 @@ def hierarchical_main(cfg):
             T.Normalize(mean=[0.485,0.456,0.406],
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
-    
+    ""
     dataset = cfg.dataset
 
     L_acc = []
@@ -458,6 +458,122 @@ def main_pascalVOC(cfg):
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
 
+def main_CUBloc(cfg):
+    CUB_sampler = CUBSampler(cfg)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = get_model(size="s",use_v2=False).to(device)
+    dsm_model = DSM(model=model, # same model as the one used for the classification
+                    n_eigenvectors=cfg.dsm.n_eigenvectors,
+                    lambda_color=cfg.dsm.lambda_color)
+    dsm_model.to(device)
+    sam = get_sam_model(size="b").to(device)  
+    sam_model = CachedSamPredictor(sam_model = sam, 
+                                   path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
+                                   json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
+    hierarchical = DSM_SAM(dsm_model, sam_model, 
+                           nms_thr=cfg.hierarchical.nms_thr,
+                           area_thr=cfg.hierarchical.area_thr,
+                           target_size=224*2,)
+    
+
+    
+    transforms = T.Compose([
+            ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
+            T.Normalize(mean=[0.485,0.456,0.406],
+                        std=[0.229,0.224,0.225]) # imagenet mean and std
+        ])
+    
+    L_acc = []
+    ncm = NCM()
+    linear = MyLinear()
+
+    pbar = tqdm(range(cfg.n_runs), desc="Runs")
+
+    for episode_idx in pbar:
+        support_images, temp_support_labels, query_images, temp_query_labels, annotations = CUB_sampler(seed_classes=episode_idx, seed_images=episode_idx)
+        filtered_annotations = CUB_sampler.filter_annotations(annotations, filter=True) # (quality annotations)
+        unfiltered_annotations = CUB_sampler.filter_annotations(annotations, filter=False)
+        support_augmented_imgs = []
+        support_labels = []
+        for i, img_path in enumerate(support_images):
+            img = Image.open(img_path).convert("RGB")
+            support_augmented_imgs += [img] # add the original image
+            bboxes = filtered_annotations[img_path] # list of bboxes
+            for bbox in bboxes:
+                # convert to [x,y,w,h]
+                #bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
+                support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
+
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+            support_labels += labels
+        """# plot the support augmented images
+        for i,img in enumerate(support_augmented_imgs):
+            img.save(f"results/{i}_{uuid4()}.png")
+            
+        exit()"""
+        query_augmented_imgs = []
+        query_labels = []
+        
+        for i, img_path in enumerate(query_images):
+            img = Image.open(img_path).convert("RGB")
+            query_augmented_imgs += [img]
+            masks, _, resized_img = hierarchical.forward(img = img, 
+                                            path_to_img=img_path,
+                                            sample_per_map=cfg.hierarchical.sample_per_map,
+                                            temperature=cfg.hierarchical.temperature)
+            masks = masks.detach().cpu().numpy()
+
+            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
+            
+            """bboxes = filtered_annotations[img_path] # list of bboxes
+            for bbox in bboxes:
+                #bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
+                query_augmented_imgs += [crop(img, bbox, dezoom=0)]"""
+
+            labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
+            query_labels += labels
+            
+        support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
+        query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
+        augmentations = [T.RandomHorizontalFlip(p=1), T.RandomVerticalFlip(p=1), T.RandomRotation(90)]
+        # have to augment the support set but also support_labels
+        for i in range(len(support_augmented_imgs)):
+            img = support_augmented_imgs[i]
+            label = support_labels[i]
+            for i in range(0): #30 augmentations
+                for aug in augmentations:
+                    img = aug(img)
+                    support_augmented_imgs.append(img)
+                    support_labels.append(label)
+                    
+        support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector WARNING: hardcoded
+        query_tensor = torch.zeros((len(query_augmented_imgs), 384))
+        
+        with torch.inference_mode():
+            for i in range(len(support_augmented_imgs)):
+                inputs = support_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                support_tensor[i] = outputs
+
+            for i in range(len(query_augmented_imgs)):
+                inputs = query_augmented_imgs[i].unsqueeze(0)
+                outputs = model(inputs).squeeze(0)
+                query_tensor[i] = outputs
+        # use a linear classifier
+        use_linear = False
+        if use_linear:
+            acc = linear(support_tensor, query_tensor, support_labels, query_labels, temp_query_labels, encode_labels=True)
+        else:
+            acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
+        L_acc.append(acc)
+        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+        if cfg.wandb:
+            wandb.log({"running_accuracy": acc,
+                        "average_accuracy": np.mean(L_acc),
+                       })
+            
+    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
+    print("All accuracies: ", np.round(L_acc,2))
 def main_imagenetloc(cfg):
     imagenetloc_sampler = ImageNetLocSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -786,6 +902,8 @@ if __name__ == "__main__":
     python main.py -t coco -d coco -w
     python main.py -t pascalVOC -d pascalVOC -w
     python main.py -t seed -d imagenet -w -s 0
+    python main.py -t imagenetloc -d imagenetloc -w
+    python main.py -t CUBloc -d CUBloc -w
     """
     
     import argparse
@@ -828,6 +946,8 @@ if __name__ == "__main__":
 
     elif args.type == "imagenetloc":
         main_imagenetloc(cfg)
+    elif args.type == "CUBloc":
+        main_CUBloc(cfg)
 
     else:
         raise ValueError(f"Unknown type of experiment: {args.type}")
