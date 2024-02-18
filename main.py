@@ -410,7 +410,8 @@ def main_pascalVOC(cfg):
                 resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
                 # same size as the hierarchical method
                 masks = amg.forward(img = resized_img) # [{"segmentation":segmentation, "area":area}]
-                masks = [mask["segmentation"] for mask in masks]
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask.shape[0]*mask.shape[1]*0.05]
+                # discard masks that are too small (less than 5% of the image)
                 
             else:
                 masks, _, resized_img =hierarchical.forward(img = img, 
@@ -419,7 +420,7 @@ def main_pascalVOC(cfg):
                                                 temperature=cfg.hierarchical.temperature)
                 masks = masks.detach().cpu().numpy()
 
-            query_augmented_imgs += [img]
+            query_augmented_imgs += [resized_img]
             query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
 
             """for bbox in bboxes:
@@ -541,7 +542,8 @@ def main_CUBloc(cfg):
                 resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
                 # same size as the hierarchical method
                 masks = amg.forward(img = resized_img)
-                masks = [mask["segmentation"] for mask in masks]
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask.shape[0]*mask.shape[1]*0.05]
+                # discard masks that are too small (less than 5% of the image)
 
             else:
             
@@ -551,7 +553,7 @@ def main_CUBloc(cfg):
                                                 temperature=cfg.hierarchical.temperature)
                 masks = masks.detach().cpu().numpy()
 
-            query_augmented_imgs += [img]
+            query_augmented_imgs += [resized_img]
             query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
             
             """bboxes = filtered_annotations[img_path] # list of bboxes
