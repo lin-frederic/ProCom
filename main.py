@@ -1,5 +1,6 @@
 import torch
 from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler, ImageNetLocSampler, CUBSampler
+from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
 from classif.ncm import NCM
 from classif.linear import MyLinear
@@ -670,7 +671,7 @@ def main_imagenetloc(cfg):
                 resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
                 # same size as the hierarchical method
                 masks = amg.forward(img = resized_img)
-                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask.shape[0]*mask.shape[1]*0.05]
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask["segmentation"].shape[0]*mask["segmentation"].shape[1]*0.05]
                 # discard masks that are too small (less than 5% of the image)
             
             else:
@@ -1018,7 +1019,7 @@ if __name__ == "__main__":
         main_pascalVOC(cfg)
 
     elif args.type == "imagenetloc":
-        main_imagenetlocimageimage(cfg)
+        main_imagenetloc(cfg)
     elif args.type == "CUBloc":
         main_CUBloc(cfg)
 
