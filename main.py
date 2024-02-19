@@ -612,7 +612,7 @@ def main_imagenetloc(cfg):
     imagenetloc_sampler = ImageNetLocSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
-    if use_AMG:
+    """if use_AMG:
         print("Using AMG")
         amg = SAM("b")
     
@@ -629,7 +629,7 @@ def main_imagenetloc(cfg):
         hierarchical = DSM_SAM(dsm_model, sam_model, 
                             nms_thr=cfg.hierarchical.nms_thr,
                             area_thr=cfg.hierarchical.area_thr,
-                            target_size=224*2,)
+                            target_size=224*2,)"""
 
     transforms = T.Compose([
             ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
@@ -656,9 +656,14 @@ def main_imagenetloc(cfg):
             for bbox in bboxes:
                 # convert to [x,y,w,h]
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
-                support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
+                #print(bbox)
+                # img size
+                #print(img.size[::-1])
+                #support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
             
-            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+            #labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+
+            labels = [(temp_support_labels[i], i) for j in range(1)] #original image only
             support_labels += labels
 
         query_augmented_imgs = []
@@ -667,7 +672,7 @@ def main_imagenetloc(cfg):
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
 
-            if use_AMG:
+            """if use_AMG:
                 resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
                 # same size as the hierarchical method
                 masks = amg.forward(img = resized_img)
@@ -679,12 +684,15 @@ def main_imagenetloc(cfg):
                                                 path_to_img=img_path,
                                                 sample_per_map=cfg.hierarchical.sample_per_map,
                                                 temperature=cfg.hierarchical.temperature)
-                masks = masks.detach().cpu().numpy()
+                masks = masks.detach().cpu().numpy()"""
 
+
+            resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img)
             query_augmented_imgs += [resized_img]
-            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
+            #query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
 
-            labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
+            #labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
+            labels = [(temp_query_labels[i], i) for j in range(1)]
             query_labels += labels
 
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]

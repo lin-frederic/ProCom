@@ -330,7 +330,7 @@ class ImageNetLocSampler():
                 bboxes = []
                 annotations_parsed = annotation_line.split(" ")[:-1]
                 for i in range(0, len(annotations_parsed), 5):
-                    bboxes.append((annotations_parsed[i], (int(annotations_parsed[i+1]), int(annotations_parsed[i+3]), int(annotations_parsed[i+2]), int(annotations_parsed[i+4]))))
+                    bboxes.append((annotations_parsed[i], (int(annotations_parsed[i+1]), int(annotations_parsed[i+2]), int(annotations_parsed[i+3]), int(annotations_parsed[i+4]))))
                 full_annotations_dict[img] = (classe, bboxes)
   
 
@@ -352,7 +352,14 @@ class ImageNetLocSampler():
         return support_images, support_labels, query_images, query_labels, annotations  
 
     def filter_annotations(self, annotations, filter=True):
-        return annotations
+        filter_annotations = {}
+        for img_path in annotations:
+            img_category, img_annotations = annotations[img_path]
+            if filter:
+                filter_annotations[img_path] = [annotation[1] for annotation in img_annotations if annotation[0]==img_category]
+            else:
+                filter_annotations[img_path] = [annotation[1] for annotation in img_annotations]
+        return filter_annotations    
     
 
 class PascalVOCSampler():
