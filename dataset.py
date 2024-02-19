@@ -354,49 +354,6 @@ class ImageNetLocSampler():
     def filter_annotations(self, annotations, filter=True):
         return annotations
     
-class ImageNetLocImageImageSampler():
-    def __init__(self, cfg):
-        self.path = cfg.paths["imagenetloc"]
-        self.n_ways = 5
-        self.n_shots = cfg.sampler.n_shots
-        self.n_queries = cfg.sampler.n_queries
-    def __call__(self, seed_classes = None, seed_images = None):
-        classes = os.listdir(cfg.paths["imagenet"])
-        if seed_classes is not None:
-            rd.seed(seed_classes)
-        selected_classes = rd.sample(classes, self.n_ways)
-        dataset = {}
-        dataset["support"] = {}
-        dataset["query"] = {}
-        for classe in selected_classes:
-            if seed_images is not None:
-                rd.seed(seed_images)
-            shuffle = rd.sample(os.listdir(os.path.join(cfg.paths["imagenet"], classe)), self.n_shots+self.n_queries)
-            dataset["support"][classe] = shuffle[:self.n_shots]
-            dataset["query"][classe] = shuffle[self.n_shots:]
-
-        support_images = []
-        support_labels = []
-        query_images = []
-        query_labels = []
-  
-
-        for classe in dataset["support"]:
-            for img in dataset["support"][classe]:
-                img_path = os.path.join(cfg.paths["imagenet"], classe, img)
-                support_images.append(img_path)
-                support_labels.append(classe)
-                img = img.split(".")[0]
-
-        for classe in dataset["query"]:
-            for img in dataset["query"][classe]:
-                img_path = os.path.join(cfg.paths["imagenet"], classe, img)
-                query_images.append(img_path)
-                query_labels.append(classe)
-                img = img.split(".")[0]
-        
-        return support_images, support_labels, query_images, query_labels
-            
 
 class PascalVOCSampler():
     def __init__(self, cfg):
