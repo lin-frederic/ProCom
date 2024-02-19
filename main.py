@@ -17,6 +17,8 @@ import os
 import json
 import wandb
 
+import matplotlib.pyplot as plt
+
 from models.DSM_SAM import DSM_SAM
 from model import get_sam_model, CachedSamPredictor
 from segment_anything import SamPredictor
@@ -410,7 +412,7 @@ def main_pascalVOC(cfg):
                 resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
                 # same size as the hierarchical method
                 masks = amg.forward(img = resized_img) # [{"segmentation":segmentation, "area":area}]
-                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask.shape[0]*mask.shape[1]*0.05]
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask["segmentation"].shape[0]*mask["segmentation"].shape[1]*0.05]
                 # discard masks that are too small (less than 5% of the image)
                 
             else:
@@ -542,7 +544,7 @@ def main_CUBloc(cfg):
                 resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
                 # same size as the hierarchical method
                 masks = amg.forward(img = resized_img)
-                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask.shape[0]*mask.shape[1]*0.05]
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask["segmentation"].shape[0]*mask["segmentation"].shape[1]*0.05]
                 # discard masks that are too small (less than 5% of the image)
 
             else:
