@@ -353,6 +353,7 @@ class ImageNetLocSampler():
 
     def filter_annotations(self, annotations, filter=True):
         return annotations
+    
 
 class PascalVOCSampler():
     def __init__(self, cfg):
