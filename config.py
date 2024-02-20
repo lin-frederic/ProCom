@@ -2,6 +2,7 @@ from box import Box
 from pprint import pprint
 
 config = { 
+    "use_AMG": True,
     "wandb" : False,
     "paths" : {
         "imagenet" : "/nasbrain/datasets/imagenet/images/val",

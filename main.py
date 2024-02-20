@@ -17,6 +17,8 @@ import os
 import json
 import wandb
 
+import matplotlib.pyplot as plt
+
 from models.DSM_SAM import DSM_SAM
 from model import get_sam_model, CachedSamPredictor
 from segment_anything import SamPredictor
@@ -325,7 +327,6 @@ def main_coco(cfg):
                 outputs = model(inputs).squeeze(0)
                 query_tensor[i] = outputs
         
-        #Jules 
         acc = ncm(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
 
         L_acc.append(acc)
@@ -340,21 +341,28 @@ def main_coco(cfg):
     print("All accuracies: ", np.round(L_acc,2))
 
 def main_pascalVOC(cfg):
+    use_AMG=cfg.use_AMG
     pascalVOC_sampler = PascalVOCSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
-    """dsm_model = DSM(model=model, # same model as the one used for the classification
-                    n_eigenvectors=cfg.dsm.n_eigenvectors,
-                    lambda_color=cfg.dsm.lambda_color)
-    dsm_model.to(device)
-    sam = get_sam_model(size="b").to(device)  
-    sam_model = CachedSamPredictor(sam_model = sam, 
-                                   path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
-                                   json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
-    hierarchical = DSM_SAM(dsm_model, sam_model, 
-                           nms_thr=cfg.hierarchical.nms_thr,
-                           area_thr=cfg.hierarchical.area_thr,
-                           target_size=224*2,)"""  
+    if use_AMG:
+        print("Using AMG")
+        amg = SAM("b")
+
+    else:
+        print("Using hierarchical")
+        dsm_model = DSM(model=model, # same model as the one used for the classification
+                        n_eigenvectors=cfg.dsm.n_eigenvectors,
+                        lambda_color=cfg.dsm.lambda_color)
+        dsm_model.to(device)
+        sam = get_sam_model(size="b").to(device)  
+        sam_model = CachedSamPredictor(sam_model = sam, 
+                                    path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
+                                    json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
+        hierarchical = DSM_SAM(dsm_model, sam_model, 
+                            nms_thr=cfg.hierarchical.nms_thr,
+                            area_thr=cfg.hierarchical.area_thr,
+                            target_size=224*2,)  
     
 
     
@@ -399,16 +407,25 @@ def main_pascalVOC(cfg):
         
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            query_augmented_imgs += [img]
-            """masks, _, resized_img =hierarchical.forward(img = img, 
-                                            path_to_img=img_path,
-                                            sample_per_map=cfg.hierarchical.sample_per_map,
-                                            temperature=cfg.hierarchical.temperature)
-            masks = masks.detach().cpu().numpy()
+            #bboxes = unfiltered_annotations[img_path] # list of bboxes
+            if use_AMG:
+                resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
+                # same size as the hierarchical method
+                masks = amg.forward(img = resized_img) # [{"segmentation":segmentation, "area":area}]
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask["segmentation"].shape[0]*mask["segmentation"].shape[1]*0.05]
+                # discard masks that are too small (less than 5% of the image)
+                
+            else:
+                masks, _, resized_img =hierarchical.forward(img = img, 
+                                                path_to_img=img_path,
+                                                sample_per_map=cfg.hierarchical.sample_per_map,
+                                                temperature=cfg.hierarchical.temperature)
+                masks = masks.detach().cpu().numpy()
 
-            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]"""
-            """bboxes = unfiltered_annotations[img_path] # list of bboxes
-            for bbox in bboxes:
+            query_augmented_imgs += [resized_img]
+            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
+
+            """for bbox in bboxes:
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
                 query_augmented_imgs += [crop(img, bbox, dezoom = cfg.dezoom)]"""
 
@@ -447,21 +464,28 @@ def main_pascalVOC(cfg):
     print("All accuracies: ", np.round(L_acc,2))
 
 def main_CUBloc(cfg):
+    use_AMG = cfg.use_AMG
     CUB_sampler = CUBSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
-    """dsm_model = DSM(model=model, # same model as the one used for the classification
-                    n_eigenvectors=cfg.dsm.n_eigenvectors,
-                    lambda_color=cfg.dsm.lambda_color)
-    dsm_model.to(device)
-    sam = get_sam_model(size="b").to(device)  
-    sam_model = CachedSamPredictor(sam_model = sam, 
-                                   path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
-                                   json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
-    hierarchical = DSM_SAM(dsm_model, sam_model, 
-                           nms_thr=cfg.hierarchical.nms_thr,
-                           area_thr=cfg.hierarchical.area_thr,
-                           target_size=224*2,)"""
+    if use_AMG:
+        print("Using AMG")
+        amg = SAM("b")
+    
+    else:
+        print("Using hierarchical")
+        dsm_model = DSM(model=model, # same model as the one used for the classification
+                        n_eigenvectors=cfg.dsm.n_eigenvectors,
+                        lambda_color=cfg.dsm.lambda_color)
+        dsm_model.to(device)
+        sam = get_sam_model(size="b").to(device)  
+        sam_model = CachedSamPredictor(sam_model = sam, 
+                                    path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
+                                    json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
+        hierarchical = DSM_SAM(dsm_model, sam_model, 
+                            nms_thr=cfg.hierarchical.nms_thr,
+                            area_thr=cfg.hierarchical.area_thr,
+                            target_size=224*2,)
     
 
     
@@ -503,15 +527,25 @@ def main_CUBloc(cfg):
         
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            query_augmented_imgs += [img]
-            """masks, _, resized_img = hierarchical.forward(img = img, 
-                                            path_to_img=img_path,
-                                            sample_per_map=cfg.hierarchical.sample_per_map,
-                                            temperature=cfg.hierarchical.temperature)
-            masks = masks.detach().cpu().numpy()
 
+            if use_AMG:
+                resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
+                # same size as the hierarchical method
+                masks = amg.forward(img = resized_img)
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask["segmentation"].shape[0]*mask["segmentation"].shape[1]*0.05]
+                # discard masks that are too small (less than 5% of the image)
+
+            else:
+            
+                masks, _, resized_img = hierarchical.forward(img = img, 
+                                                path_to_img=img_path,
+                                                sample_per_map=cfg.hierarchical.sample_per_map,
+                                                temperature=cfg.hierarchical.temperature)
+                masks = masks.detach().cpu().numpy()
+
+            query_augmented_imgs += [resized_img]
             query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
-            """
+            
             """bboxes = filtered_annotations[img_path] # list of bboxes
             for bbox in bboxes:
                 #bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
@@ -562,9 +596,28 @@ def main_CUBloc(cfg):
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
 def main_imagenetloc(cfg):
+    use_AMG = cfg.use_AMG
     imagenetloc_sampler = ImageNetLocSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
+    if use_AMG:
+        print("Using AMG")
+        amg = SAM("b")
+    
+    else:
+        print("Using hierarchical")
+        dsm_model = DSM(model=model, # same model as the one used for the classification
+                        n_eigenvectors=cfg.dsm.n_eigenvectors,
+                        lambda_color=cfg.dsm.lambda_color)
+        dsm_model.to(device)
+        sam = get_sam_model(size="b").to(device)  
+        sam_model = CachedSamPredictor(sam_model = sam, 
+                                    path_to_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset),
+                                    json_cache=os.path.join(cfg.sam_cache, "embeddings", cfg.dataset, "cache.json"))
+        hierarchical = DSM_SAM(dsm_model, sam_model, 
+                            nms_thr=cfg.hierarchical.nms_thr,
+                            area_thr=cfg.hierarchical.area_thr,
+                            target_size=224*2,)
 
     transforms = T.Compose([
             ResizeModulo(patch_size=16, target_size=224, tensor_out=True),
@@ -581,12 +634,19 @@ def main_imagenetloc(cfg):
     for episode_idx in pbar:
         support_images, temp_support_labels, query_images, temp_query_labels, annotations = imagenetloc_sampler(seed_classes=episode_idx, seed_images=episode_idx)
         filtered_annotations = imagenetloc_sampler.filter_annotations(annotations, filter=True) # (quality annotations)
+        unfiltered_annotations = imagenetloc_sampler.filter_annotations(annotations, filter=False)
         support_augmented_imgs = []
         support_labels = []
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
             support_augmented_imgs += [img]
-            labels = [(temp_support_labels[i], i) for j in range(1)] #bounding box + original image
+            bboxes = filtered_annotations[img_path] # list of bboxes
+            for bbox in bboxes:
+                # convert to [x,y,w,h]
+                bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
+                support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
+            
+            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
             support_labels += labels
 
         query_augmented_imgs = []
@@ -594,8 +654,25 @@ def main_imagenetloc(cfg):
 
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            query_augmented_imgs += [img]
-            labels = [(temp_query_labels[i], i) for j in range(1)]
+
+            if use_AMG:
+                resized_img = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(img) 
+                # same size as the hierarchical method
+                masks = amg.forward(img = resized_img)
+                masks = [mask["segmentation"] for mask in masks if mask["area"] > mask["segmentation"].shape[0]*mask["segmentation"].shape[1]*0.05]
+                # discard masks that are too small (less than 5% of the image)
+            
+            else:
+                masks, _, resized_img = hierarchical.forward(img = img, 
+                                                path_to_img=img_path,
+                                                sample_per_map=cfg.hierarchical.sample_per_map,
+                                                temperature=cfg.hierarchical.temperature)
+                masks = masks.detach().cpu().numpy()
+
+            query_augmented_imgs += [resized_img]
+            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
+
+            labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
             query_labels += labels
 
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
@@ -638,8 +715,6 @@ def main_imagenetloc(cfg):
                        })
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
-
-
 
 
 
