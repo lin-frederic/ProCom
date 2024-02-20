@@ -343,7 +343,7 @@ def main_pascalVOC(cfg):
     pascalVOC_sampler = PascalVOCSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
-    dsm_model = DSM(model=model, # same model as the one used for the classification
+    """dsm_model = DSM(model=model, # same model as the one used for the classification
                     n_eigenvectors=cfg.dsm.n_eigenvectors,
                     lambda_color=cfg.dsm.lambda_color)
     dsm_model.to(device)
@@ -354,7 +354,7 @@ def main_pascalVOC(cfg):
     hierarchical = DSM_SAM(dsm_model, sam_model, 
                            nms_thr=cfg.hierarchical.nms_thr,
                            area_thr=cfg.hierarchical.area_thr,
-                           target_size=224*2,)  
+                           target_size=224*2,)"""  
     
 
     
@@ -381,13 +381,13 @@ def main_pascalVOC(cfg):
         for i, img_path in enumerate(support_images):
             img = Image.open(img_path).convert("RGB")
             support_augmented_imgs += [img] # add the original image
-            bboxes = filtered_annotations[img_path] # list of bboxes
+            """bboxes = filtered_annotations[img_path] # list of bboxes
             for bbox in bboxes:
                 # convert to [x,y,w,h]
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
-                support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
+                support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]"""
 
-            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+            labels = [(temp_support_labels[i], i) for j in range(1)]#len(bboxes)+1)] #bounding box + original image
             support_labels += labels
         """# plot the support augmented images
         for i,img in enumerate(support_augmented_imgs):
@@ -399,35 +399,23 @@ def main_pascalVOC(cfg):
         
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
-            #bboxes = unfiltered_annotations[img_path] # list of bboxes
-            masks, _, resized_img =hierarchical.forward(img = img, 
+            query_augmented_imgs += [img]
+            """masks, _, resized_img =hierarchical.forward(img = img, 
                                             path_to_img=img_path,
                                             sample_per_map=cfg.hierarchical.sample_per_map,
                                             temperature=cfg.hierarchical.temperature)
             masks = masks.detach().cpu().numpy()
 
-            query_augmented_imgs += [img]
-            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
-
-            """for bbox in bboxes:
+            query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]"""
+            """bboxes = unfiltered_annotations[img_path] # list of bboxes
+            for bbox in bboxes:
                 bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
-                query_augmented_imgs += [crop(img, bbox, dezoom=0)]"""
+                query_augmented_imgs += [crop(img, bbox, dezoom = cfg.dezoom)]"""
 
-            labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
+            labels = [(temp_query_labels[i], i) for j in range(1)]#len(masks)+1)] # bounding box + original image
             query_labels += labels
-            
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]
         query_augmented_imgs = [transforms(img).to(device) for img in query_augmented_imgs]
-        augmentations = [T.RandomHorizontalFlip(p=1), T.RandomVerticalFlip(p=1), T.RandomRotation(90)]
-        # have to augment the support set but also support_labels
-        for i in range(len(support_augmented_imgs)):
-            img = support_augmented_imgs[i]
-            label = support_labels[i]
-            for i in range(0): #30 augmentations
-                for aug in augmentations:
-                    img = aug(img)
-                    support_augmented_imgs.append(img)
-                    support_labels.append(label)
                     
         support_tensor = torch.zeros((len(support_augmented_imgs), 384)) # size of the feature vector WARNING: hardcoded
         query_tensor = torch.zeros((len(query_augmented_imgs), 384))
@@ -462,7 +450,7 @@ def main_CUBloc(cfg):
     CUB_sampler = CUBSampler(cfg)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
-    dsm_model = DSM(model=model, # same model as the one used for the classification
+    """dsm_model = DSM(model=model, # same model as the one used for the classification
                     n_eigenvectors=cfg.dsm.n_eigenvectors,
                     lambda_color=cfg.dsm.lambda_color)
     dsm_model.to(device)
@@ -473,7 +461,7 @@ def main_CUBloc(cfg):
     hierarchical = DSM_SAM(dsm_model, sam_model, 
                            nms_thr=cfg.hierarchical.nms_thr,
                            area_thr=cfg.hierarchical.area_thr,
-                           target_size=224*2,)
+                           target_size=224*2,)"""
     
 
     
@@ -503,8 +491,7 @@ def main_CUBloc(cfg):
                 # convert to [x,y,w,h]
                 #bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
                 support_augmented_imgs += [crop(img,bbox,dezoom=cfg.dezoom)]
-
-            labels = [(temp_support_labels[i], i) for j in range(len(bboxes)+1)] #bounding box + original image
+            labels = [(temp_support_labels[i], i) for j in range(1)]#len(bboxes)+1)] #bounding box + original image
             support_labels += labels
         """# plot the support augmented images
         for i,img in enumerate(support_augmented_imgs):
@@ -517,20 +504,20 @@ def main_CUBloc(cfg):
         for i, img_path in enumerate(query_images):
             img = Image.open(img_path).convert("RGB")
             query_augmented_imgs += [img]
-            masks, _, resized_img = hierarchical.forward(img = img, 
+            """masks, _, resized_img = hierarchical.forward(img = img, 
                                             path_to_img=img_path,
                                             sample_per_map=cfg.hierarchical.sample_per_map,
                                             temperature=cfg.hierarchical.temperature)
             masks = masks.detach().cpu().numpy()
 
             query_augmented_imgs += [crop_mask(resized_img, mask, dezoom=cfg.dezoom) for mask in masks]
-            
+            """
             """bboxes = filtered_annotations[img_path] # list of bboxes
             for bbox in bboxes:
                 #bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]] # convert to [x,y,w,h]
                 query_augmented_imgs += [crop(img, bbox, dezoom=0)]"""
 
-            labels = [(temp_query_labels[i], i) for j in range(len(masks)+1)] # bounding box + original image
+            labels = [(temp_query_labels[i], i) for j in range(1)]#len(masks)+1)] # bounding box + original image
             query_labels += labels
             
         support_augmented_imgs = [transforms(img).to(device) for img in support_augmented_imgs]

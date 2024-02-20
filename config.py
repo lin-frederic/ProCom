@@ -19,7 +19,7 @@ config = {
     "sampler" : {
         "n_ways" : 5,
         
-        "n_shots" : 1,
+        "n_shots" : 5,
         "n_queries" : 15,
     },
     
@@ -42,7 +42,7 @@ config = {
         "temperature":255*0.1 # the maps are normalized to [0,1] and then multiplied by temperature
     },
 
-    "dezoom" : 0.0 # dezoom factor for the crop of the image
+    "dezoom" : 0.2 # dezoom factor for the crop of the image
 }
 
 cfg = Box(config)
