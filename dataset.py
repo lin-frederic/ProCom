@@ -597,4 +597,4 @@ def main_cub():
     print(annotations)
 
 if __name__== "__main__":
-    main_cub()
+    main_pascal()

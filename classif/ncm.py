@@ -11,10 +11,11 @@ import numpy as np
 from config import cfg
 
 class NCM(torch.nn.Module):
-    def __init__(self, top_k=1):
+    def __init__(self, top_k=1, seed=-1):
         super(NCM, self).__init__()
         self.preprocess_NCM_layer = preprocess_Features()
         self.top_k = top_k
+        self.seed = seed
 
     def forward(self, support_features, query_features, support_labels, query_labels, use_cosine=True):
         # support_features: list of features, as a tensor of shape [Ns,d] where Ns is the number of support features
@@ -80,6 +81,8 @@ class NCM(torch.nn.Module):
                 # sample k+1 indices from unique_support_labels[class_index]
                 sampled_support_indices = {}
                 for support_class_index in unique_labels:
+                    if self.seed > 0:
+                        np.random.seed(self.seed)
                     sampled_support_indices[support_class_index] = np.random.choice(unique_support_labels[support_class_index], k+1, replace=False)
                 augmented_support_indices = []
                 for support_class_index in unique_labels:
@@ -103,7 +106,6 @@ class NCM(torch.nn.Module):
                 query_class = unique_query_labels_reverse[image_index]
                 if support_class == query_class:
                     acc[k] += 1
-        print(len(annotations['query']))
         acc = acc / len(annotations['query'])
         return acc[0]
 def preprocess_plot(img):

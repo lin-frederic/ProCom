@@ -1,8 +1,12 @@
 from box import Box
 from pprint import pprint
 
-config = { 
-    "use_AMG": True,
+config = {
+    "setting":{
+        # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
+      "query": "unfiltered",
+      "support": "filtered",
+    },
     "wandb" : False,
     "paths" : {
         "imagenet" : "/nasbrain/datasets/imagenet/images/val",
