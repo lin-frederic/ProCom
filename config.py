@@ -4,7 +4,7 @@ from pprint import pprint
 config = {
     "setting":{
         # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
-      "query": "unfiltered",
+      "query": "filtered",
       "support": "filtered",
     },
     "wandb" : False,
