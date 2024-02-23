@@ -4,10 +4,10 @@ from pprint import pprint
 config = {
     "setting":{
         # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
-      "query": "whole",
-      "support": "whole",
+      "query": "filtered",
+      "support": "filtered",
     },
-    "classifier" : "ncm", # can be any of ["matching", "ncm"]
+    "classifier" : "ncm", # ["matching", "ncm"]
     "k_matching" : "1NN", # "1NN" or "KNN"
     "wandb" : False,
     "paths" : {

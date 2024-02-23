@@ -194,13 +194,25 @@ class NCM(torch.nn.Module):
                     augmented_query_indices.append(j)
                 similarity = F.cosine_similarity(query_features[augmented_query_indices].unsqueeze(1), prototype.unsqueeze(0), dim=2) # [n_query, n_shot]
                 max_similarity, max_similarity_index = torch.max(similarity, dim=1)
-                class_index = 0
-                class_similarity = -float('inf') 
+                class_similarity = {}
+                for i in range(len(max_similarity)):
+                    similarity_value, similarity_index = max_similarity[i], max_similarity_index[i]
+                    class_index = unique_labels[similarity_index]
+                    if class_index not in class_similarity:
+                        class_similarity[class_index] = []
+                    class_similarity[class_index].append(similarity_value)
+                for class_index in class_similarity:
+                    class_similarity[class_index] = torch.mean(torch.stack(class_similarity[class_index]))
+                # get the class with the maximum similarity (averaged over all crops)
+                support_class = max(class_similarity, key=class_similarity.get)
+            
+                """class_index = 0
+                class_similarity = -float('inf')
                 for i in range(len(max_similarity)):
                     if max_similarity[i] > class_similarity:
                         class_similarity = max_similarity[i]
                         class_index = max_similarity_index[i]
-                support_class = unique_labels[class_index]
+                support_class = unique_labels[class_index]"""
                 if support_class == unique_query_labels_reverse[image_index]:
                     acc[n_shot] += 1
         acc = acc / len(annotations['query'])
