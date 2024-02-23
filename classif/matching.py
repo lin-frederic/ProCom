@@ -170,15 +170,41 @@ class NCM(torch.nn.Module):
             annotations['query'][image_index].append(i)
             if i not in annotations_reverse["query"]:
                 annotations_reverse["query"][i] = image_index
-        prototypes = {}
-        for class_index in unique_labels:
-            img_indices = unique_support_labels[class_index]
-            crop_indices = []
-            for img_index in img_indices:
-                for j in annotations['support'][img_index]:
-                    crop_indices.append(j)
-            prototypes[class_index] = torch.mean(support_features[crop_indices], dim=0)
-            
+        acc = np.zeros(cfg.sampler.n_shots) # accuracy for each number of shots
+        for image_index in annotations['query']:
+            for n_shot in range(cfg.sampler.n_shots):
+                # sample k+1 indices from unique_support_labels[class_index]
+                sampled_support_indices = {}
+                for support_class_index in unique_labels:
+                    if self.seed > 0:
+                        np.random.seed(self.seed)
+                    sampled_support_indices[support_class_index] = np.random.choice(unique_support_labels[support_class_index], n_shot+1, replace=False)
+                augmented_support_indices = {}
+                for support_class_index in unique_labels:
+                    augmented_support_indices[support_class_index] = []
+                    for index in sampled_support_indices[support_class_index]:
+                        for j in annotations['support'][index]:
+                            augmented_support_indices[support_class_index].append(j)
+                prototype = {}
+                for support_class_index in unique_labels:
+                    prototype[support_class_index] = torch.mean(support_features[augmented_support_indices[support_class_index]], dim=0)
+                prototype = torch.stack([prototype[support_class_index] for support_class_index in unique_labels])
+                augmented_query_indices = []
+                for j in annotations['query'][image_index]:
+                    augmented_query_indices.append(j)
+                similarity = F.cosine_similarity(query_features[augmented_query_indices].unsqueeze(1), prototype.unsqueeze(0), dim=2) # [n_query, n_shot]
+                max_similarity, max_similarity_index = torch.max(similarity, dim=1)
+                class_index = 0
+                class_similarity = -float('inf') 
+                for i in range(len(max_similarity)):
+                    if max_similarity[i] > class_similarity:
+                        class_similarity = max_similarity[i]
+                        class_index = max_similarity_index[i]
+                support_class = unique_labels[class_index]
+                if support_class == unique_query_labels_reverse[image_index]:
+                    acc[n_shot] += 1
+        acc = acc / len(annotations['query'])
+        return acc[0]
 
 
 def preprocess_plot(img):

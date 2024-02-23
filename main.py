@@ -2,7 +2,7 @@ import torch
 from dataset import DatasetBuilder, COCOSampler, PascalVOCSampler, ImageNetLocSampler, CUBSampler
 from model import get_model
 from config import cfg  # cfg.paths is a list of paths to the datasets
-from classif.matching import MatchingClassifier
+from classif.matching import MatchingClassifier, NCM
 from classif.linear import MyLinear
 from tools import ResizeModulo
 from torchvision import transforms as T
@@ -284,7 +284,10 @@ def main_loc(cfg):
         ])
     
     L_acc = []
-    classifier = MatchingClassifier(seed=42)
+    if cfg.classifier == "matching":
+        classifier = MatchingClassifier(seed=42)
+    elif cfg.classifier == "ncm":
+        classifier = NCM(seed=42)
     
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
     
