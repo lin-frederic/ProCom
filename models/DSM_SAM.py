@@ -33,12 +33,15 @@ import time
 
 from tqdm import tqdm
 
+import uuid
+
 class DSM_SAM():
     def __init__(self, dsm_model: DSM, 
                  sam_model: CachedSamPredictor,
                  nms_thr=0.5,
                  area_thr=0.05, # under this threshold, the mask is discarded
-                 target_size=224
+                 target_size=224,
+                 display=False # False or path to save the figure
                  ):
         super().__init__()
         self.dsm_model = dsm_model
@@ -52,6 +55,10 @@ class DSM_SAM():
 
         self.nms_thr = nms_thr
         self.area_thr = area_thr
+        
+        assert display == False or isinstance(display, str), "display must be False or a path to save the figure"
+
+        self.display = display
 
     def get_metric(self, ref_mask, pred_mask, metric="iou"):
         assert len(ref_mask.shape) == 2, "unbatch ref_mask"
@@ -187,6 +194,21 @@ class DSM_SAM():
         # compute eigen maps (will also be used as coarse masks)
         eigen_maps = self.dsm_model.set_map(img_tensor) # returns numpy array (n_eigen_maps, H, W)
 
+        if self.display != False:
+            id = uuid.uuid4()
+            plt.figure()
+            plt.imshow(img)
+            plt.axis("off")
+            plt.savefig(self.display+f"_{id}_original.png")
+
+
+            for i, eigen_map in enumerate(eigen_maps):
+                plt.figure()
+                plt.imshow(eigen_map)
+                plt.axis("off")
+                plt.savefig(self.display+f"_{id}_eigen_map_{i}.png")
+                plt.close() 
+
         # compute embeddings for the resized image
         if use_cache:
             self.sam_predictor.set_image_cache(path_to_img, sam_img)
@@ -230,6 +252,21 @@ class DSM_SAM():
      
             numpy_ref_mask = self.get_coarse_mask(eigen_maps[idx], kernel_size=3, method="otsu")
 
+            if self.display != False:
+                plt.figure()
+                plt.imshow(numpy_ref_mask, cmap="gray")
+                plt.axis("off")
+                plt.savefig(self.display+f"_{id}_coarse_mask_{i}.png")
+                plt.close()
+
+                for j, mask in enumerate(trimask):
+                    plt.figure()
+                    plt.imshow(mask.detach().cpu().numpy(), cmap="gray")
+                    plt.axis("off")
+                    plt.savefig(self.display+f"_{id}_mask_{i}_{j}.png")
+                    plt.close()
+
+
             coarse_ref_mask = torch.from_numpy(numpy_ref_mask).to("cuda") # (H, W)
 
             # compute metrics
@@ -242,6 +279,14 @@ class DSM_SAM():
             # keep the best one
             best_idx = torch.argmax(torch.Tensor(metrics)).item()
             kept_masks.append(trimask[best_idx])
+
+            if self.display != False:
+                plt.figure()
+                plt.imshow(trimask[best_idx].detach().cpu().numpy(), cmap="gray")
+                plt.axis("off")
+                plt.savefig(self.display+f"_{id}_best_mask_{i}.png")
+                plt.close()
+
             kept_qualities.append(triquality[best_idx])
 
         # NMS on the best masks
@@ -374,6 +419,40 @@ def main(all_in_one=False, mode="pascal"):
     print(f"Time: {end-start:.3f}s")
 
 
+
+def generate_figure():
+    dsm_model = DSM(n_eigenvectors=2,lambda_color=1)
+    dsm_model.to("cuda")
+
+    sam = get_sam_model(size="b").to("cuda")
+    sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
+
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="temp/")
+
+    sampler = PascalVOCSampler(cfg)
+    support_images, _, _, _, _ = sampler()
+
+    img_path = support_images[0]
+
+    img_path = "images/fruit_book.jpeg"
+
+    print(f"Image: {img_path}")
+    img = Image.open(img_path).convert("RGB")
+
+    masks,points, resized_img = model(img,
+                                img_path,
+                                sample_per_map=1, 
+                                temperature=255*0.07)
+    
+    print("Figure saved in temp/")
+    
+
+    
+    
+
+
+
 if __name__ == "__main__":
-    main(all_in_one=True, mode="pascal")
+    #main(all_in_one=True, mode="pascal")
+    generate_figure()
     print("Done!")
