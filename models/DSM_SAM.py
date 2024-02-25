@@ -195,19 +195,14 @@ class DSM_SAM():
         eigen_maps = self.dsm_model.set_map(img_tensor) # returns numpy array (n_eigen_maps, H, W)
 
         if self.display != False:
-            id = uuid.uuid4()
-            plt.figure()
-            plt.imshow(img)
-            plt.axis("off")
-            plt.savefig(self.display+f"_{id}_original.png")
+            id = "results_"
+            cv2.imwrite(self.display+f"{id}_original_cv2.png", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR))
 
 
             for i, eigen_map in enumerate(eigen_maps):
-                plt.figure()
-                plt.imshow(eigen_map)
-                plt.axis("off")
-                plt.savefig(self.display+f"_{id}_eigen_map_{i}.png")
-                plt.close() 
+                # save eigen maps with colormap : viridis
+                cv2.imwrite(self.display+f"{id}_eigen_map_{i}_cv2.png", 
+                            cv2.applyColorMap(eigen_map, cv2.COLORMAP_VIRIDIS))
 
         # compute embeddings for the resized image
         if use_cache:
@@ -253,18 +248,10 @@ class DSM_SAM():
             numpy_ref_mask = self.get_coarse_mask(eigen_maps[idx], kernel_size=3, method="otsu")
 
             if self.display != False:
-                plt.figure()
-                plt.imshow(numpy_ref_mask, cmap="gray")
-                plt.axis("off")
-                plt.savefig(self.display+f"_{id}_coarse_mask_{i}.png")
-                plt.close()
+                cv2.imwrite(self.display+f"{id}_coarse_mask_{i}_cv2.png", (numpy_ref_mask*255).astype(np.uint8))
 
                 for j, mask in enumerate(trimask):
-                    plt.figure()
-                    plt.imshow(mask.detach().cpu().numpy(), cmap="gray")
-                    plt.axis("off")
-                    plt.savefig(self.display+f"_{id}_mask_{i}_{j}.png")
-                    plt.close()
+                    cv2.imwrite(self.display+f"{id}_mask_{i}_{j}_cv2.png", (mask.detach().cpu().numpy()*255).astype(np.uint8))
 
 
             coarse_ref_mask = torch.from_numpy(numpy_ref_mask).to("cuda") # (H, W)
@@ -281,11 +268,8 @@ class DSM_SAM():
             kept_masks.append(trimask[best_idx])
 
             if self.display != False:
-                plt.figure()
-                plt.imshow(trimask[best_idx].detach().cpu().numpy(), cmap="gray")
-                plt.axis("off")
-                plt.savefig(self.display+f"_{id}_best_mask_{i}.png")
-                plt.close()
+                cv2.imwrite(self.display+f"{id}_best_mask_{i}_cv2.png", 
+                            (trimask[best_idx].detach().cpu().numpy()*255).astype(np.uint8))
 
             kept_qualities.append(triquality[best_idx])
 
