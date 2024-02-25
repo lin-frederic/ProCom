@@ -4,11 +4,9 @@ from pprint import pprint
 config = {
     "setting":{
         # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
-      "query": "filtered",
-      "support": "filtered",
+      "query": "whole",
+      "support": "whole",
     },
-    "classifier" : "ncm", # ["matching", "ncm"]
-    "k_matching" : "1NN", # "1NN" or "KNN"
     "wandb" : False,
     "paths" : {
         "imagenet" : "/nasbrain/datasets/imagenet/images/val",
@@ -26,7 +24,7 @@ config = {
     "sampler" : {
         "n_ways" : 5,
         
-        "n_shots" : 5,
+        "n_shots" : 10,
         "n_queries" : 15,
     },
     

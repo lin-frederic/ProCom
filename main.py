@@ -24,6 +24,8 @@ from model import get_sam_model, CachedSamPredictor
 from segment_anything import SamPredictor
 from models.deepSpectralMethods import DSM
 
+import pandas as pd
+import time
 
 
 def main_coco(cfg):
@@ -283,11 +285,21 @@ def main_loc(cfg):
                         std=[0.229,0.224,0.225]) # imagenet mean and std
         ])
     
-    L_acc = []
-    if cfg.classifier == "matching":
-        classifier = MatchingClassifier(seed=42)
-    elif cfg.classifier == "ncm":
-        classifier = NCM(seed=42)
+    
+
+    
+    
+    matching_1nn = MatchingClassifier(mode = "1nn", shots=cfg.sampler.n_shots, seed=42)
+    matching_knn = MatchingClassifier(mode = "knn", shots=cfg.sampler.n_shots, seed=42)
+    ncm_max = NCM(mode="max", shots=cfg.sampler.n_shots, seed=42)
+    ncm_sum = NCM(mode="sum", shots=cfg.sampler.n_shots, seed=42)
+
+    accs = {"matching_1nn": {i: [] for i in range(cfg.sampler.n_shots)},
+            "matching_knn": {i: [] for i in range(cfg.sampler.n_shots)},
+            "ncm_max": {i: [] for i in range(cfg.sampler.n_shots)},
+            "ncm_sum": {i: [] for i in range(cfg.sampler.n_shots)}}
+    
+
     
     pbar = tqdm(range(cfg.n_runs), desc="Runs")
     
@@ -383,16 +395,56 @@ def main_loc(cfg):
                 inputs = query_augmented_imgs[i].unsqueeze(0)
                 outputs = model(inputs).squeeze(0)
                 query_tensor[i] = outputs
-        acc = classifier(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
-        L_acc.append(acc)
-        pbar.set_description(f"Last: {round(acc,2)}, avg: {round(np.mean(L_acc),2)}")
+
+        accs_1nn = matching_1nn(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
+        accs_knn = matching_knn(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
+        accs_max = ncm_max(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
+        accs_sum = ncm_sum(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
+
+
+        for i in range(cfg.sampler.n_shots):
+            accs["matching_1nn"][i].append(accs_1nn[i])
+            accs["matching_knn"][i].append(accs_knn[i])
+            accs["ncm_max"][i].append(accs_max[i])
+            accs["ncm_sum"][i].append(accs_sum[i])
+
+        acc1 = accs["matching_1nn"][0][-1] # last accuracy for 1 shot and 1nn
+        acc5 = accs["matching_1nn"][4][-1] # last accuracy for 5 shots and 1nn
+
+        L_acc1 = accs["matching_1nn"][0]
+        L_acc5 = accs["matching_1nn"][4]
+
+
+        pbar.set_description(f"Last (1nn, 1 shot): {round(acc1,2)}, avg: {round(np.mean(L_acc1),2)}")
         if cfg.wandb:
-            wandb.log({"running_accuracy": acc,
-                        "average_accuracy": np.mean(L_acc),
+            wandb.log({"running_accuracy_1shot": acc1,
+                        "average_accuracy_1shot": np.mean(L_acc1),
+                        "running_accuracy_5shot": acc5,
+                        "average_accuracy_5shot": np.mean(L_acc5)
                        })
             
-    print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
-    print("All accuracies: ", np.round(L_acc,2))   
+
+
+    print("Saving results to csv")
+
+    now = time.strftime("%Y-%m-%d_%H-%M")
+    dirname = f"{cfg.setting.query}_{cfg.setting.support}_{dataset}_{now}"
+    os.makedirs("results", exist_ok=True)
+    os.chdir("results")
+    print(os.getcwd())
+    os.makedirs(dirname, exist_ok=True)
+    os.chdir(dirname)
+    print(os.getcwd())
+    for i in range(cfg.sampler.n_shots):
+        df = pd.DataFrame(accs["matching_1nn"][i], columns=["1nn"])
+        df["knn"] = accs["matching_knn"][i]
+        df["ncm_max"] = accs["ncm_max"][i]
+        df["ncm_sum"] = accs["ncm_sum"][i]
+        df.to_csv(f"{i+1}_shots.csv", index=False)
+
+    with open("config.json", "w") as f:
+        json.dump(cfg, f)
+
 
 def main_seed(cfg, seed): # reproduce a run with a specific seed
     # this is used to visualize the matching between the masks in the ncm
@@ -467,7 +519,7 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
                 
 if __name__ == "__main__":
     
-    print("Config:", cfg.sampler)
+    print("Config:", cfg.setting)
 
     """
     python main.py -t baseline -d imagenet -w
@@ -497,7 +549,7 @@ if __name__ == "__main__":
 
     if args.wandb:
         wandb.login()
-        wandb.init(project="procom-transformers", entity="procom", notes=args.message)
+        wandb.init(project="clean_runs", entity="procom", notes=args.message)
         cfg["wandb"] = True
         wandb.config.update(cfg)
     

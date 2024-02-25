@@ -10,9 +10,15 @@ import numpy as np
 from config import cfg
 
 class MatchingClassifier(torch.nn.Module):
-    def __init__(self, top_k=1, seed=-1):
+    def __init__(self, mode, shots, seed=-1):
         super(MatchingClassifier, self).__init__()
         self.seed = seed
+        assert mode.lower() in ["1nn", "knn"]
+        self.mode = mode.lower()
+
+        assert isinstance(shots, int)
+        assert shots > 0, "shots_number should be a positive integer"
+        self.shots = shots
 
     def forward(self, support_features, query_features, support_labels, query_labels, use_cosine=True):
         # support_features: list of features, as a tensor of shape [Ns,d] where Ns is the number of support features
@@ -86,22 +92,14 @@ class MatchingClassifier(torch.nn.Module):
                             if support_class_index not in k_class:
                                 k_class[support_class_index] = 0
                             k_class[support_class_index] += 1
-                k_min= np.min(list(k_class.values())) # minimum number of support crops per class for knn
+                if self.mode == "1nn":
+                    k_min = 1
+                else: # self.mode == "knn"
+                    k_min= np.min(list(k_class.values())) # minimum number of support crops per class for knn
                 augmented_query_indices = []
                 for j in annotations['query'][image_index]:
                     augmented_query_indices.append(j)
                 similarity_sampled = similarity[augmented_query_indices][:,augmented_support_indices] # [n_query, n_shot]
-                """max_similarity = -float('inf')
-                max_similarity_index = -float('inf')
-                for j in range(len(augmented_query_indices)):
-                    for l in range(len(augmented_support_indices)):
-                        if similarity_sampled[j,l] > max_similarity and l!=1:
-                            max_similarity = similarity_sampled[j,l]
-                            max_similarity_index = l
-                support_crop_index = augmented_support_indices[max_similarity_index]
-                support_image_index = annotations_reverse["support"][support_crop_index]
-                support_class = unique_support_labels_reverse[support_image_index]"""
-                
                 topk_similarity, topk_indices = torch.topk(similarity_sampled.flatten(), k_min) #along the support set
                 topk_indices = topk_indices%similarity_sampled.shape[1] # indices of the topk crops
                 topk_crop_indices = [augmented_support_indices[i] for i in topk_indices] # indices of the topk crops
@@ -121,11 +119,19 @@ class MatchingClassifier(torch.nn.Module):
                 if support_class == unique_query_labels_reverse[image_index]:
                     acc[n_shot] += 1
         acc = acc / len(annotations['query'])
-        return acc[0]
+        return acc
 class NCM(torch.nn.Module):
-    def __init__(self, top_k=1, seed=-1):
+    def __init__(self, mode, 
+                 shots,
+                 seed=-1):
         super(NCM, self).__init__()
         self.seed = seed
+        assert mode.lower() in ["sum", "max"]
+        self.mode = mode.lower()
+
+        assert isinstance(shots, int)
+        assert shots > 0, "shots_number should be a positive integer"
+        self.shots = shots
 
     def forward(self, support_features, query_features, support_labels, query_labels, calculate_accuracy=True, use_cosine=True, to_display=None):
         # support_features: list of features, as a tensor of shape [Ns,d] where Ns is the number of support features
@@ -195,28 +201,34 @@ class NCM(torch.nn.Module):
                 similarity = F.cosine_similarity(query_features[augmented_query_indices].unsqueeze(1), prototype.unsqueeze(0), dim=2) # [n_query, n_shot]
                 max_similarity, max_similarity_index = torch.max(similarity, dim=1)
                 class_similarity = {}
-                for i in range(len(max_similarity)):
-                    similarity_value, similarity_index = max_similarity[i], max_similarity_index[i]
-                    class_index = unique_labels[similarity_index]
-                    if class_index not in class_similarity:
-                        class_similarity[class_index] = []
-                    class_similarity[class_index].append(similarity_value)
-                for class_index in class_similarity:
-                    class_similarity[class_index] = torch.mean(torch.stack(class_similarity[class_index]))
-                # get the class with the maximum similarity (averaged over all crops)
-                support_class = max(class_similarity, key=class_similarity.get)
+
+                if self.mode == "sum":
+                    for i in range(len(max_similarity)):
+                        similarity_value, similarity_index = max_similarity[i], max_similarity_index[i]
+                        class_index = unique_labels[similarity_index]
+                        if class_index not in class_similarity:
+                            class_similarity[class_index] = []
+                        class_similarity[class_index].append(similarity_value)
+                    for class_index in class_similarity:
+                        class_similarity[class_index] = torch.sum(torch.stack(class_similarity[class_index]))
+                        #torch.mean(torch.stack(class_similarity[class_index]))
+                    # get the class with the maximum similarity (averaged over all crops)
+                    support_class = max(class_similarity, key=class_similarity.get)
             
-                """class_index = 0
-                class_similarity = -float('inf')
-                for i in range(len(max_similarity)):
-                    if max_similarity[i] > class_similarity:
-                        class_similarity = max_similarity[i]
-                        class_index = max_similarity_index[i]
-                support_class = unique_labels[class_index]"""
+                else: # max
+                    class_index = 0
+                    class_similarity = -float('inf')
+                    for i in range(len(max_similarity)):
+                        if max_similarity[i] > class_similarity:
+                            class_similarity = max_similarity[i]
+                            class_index = max_similarity_index[i]
+                    support_class = unique_labels[class_index]
+                
+
                 if support_class == unique_query_labels_reverse[image_index]:
                     acc[n_shot] += 1
         acc = acc / len(annotations['query'])
-        return acc[0]
+        return acc
 
 
 def preprocess_plot(img):
