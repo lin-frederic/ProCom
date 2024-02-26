@@ -4,8 +4,8 @@ from pprint import pprint
 config = {
     "setting":{
         # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
-      "query": "whole",
-      "support": "whole",
+      "query": "filtered",
+      "support": "filtered",
     },
     "wandb" : False,
     "paths" : {
@@ -44,7 +44,7 @@ config = {
         "nms_thr": 0.1, # threshold for non-maximum suppression (mask)
         "area_thr": 0.01, # under this area, the mask is discarded
         "sample_per_map":10, # number of points sampled from each map
-        "temperature":255*0.1 # the maps are normalized to [0,1] and then multiplied by temperature
+        "temperature":255*0.07 # the maps are normalized to [0,1] and then multiplied by temperature
     },
 
     "dezoom" : 0.2 # dezoom factor for the crop of the image

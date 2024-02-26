@@ -244,6 +244,10 @@ def main_coco(cfg):
     print("All accuracies: ", np.round(L_acc,2))
 
 def main_loc(cfg):
+
+    print("Config:", cfg.setting)
+
+
     dataset = cfg.dataset.lower() # imagenetloc, CUBloc, pascalVOC
     if dataset == "imagenetloc":
         sampler = ImageNetLocSampler(cfg)
@@ -253,6 +257,8 @@ def main_loc(cfg):
         sampler = PascalVOCSampler(cfg)
     else:
         raise ValueError(f"Unknown dataset {dataset}")
+    
+    print("Using dataset:", dataset)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(size="s",use_v2=False).to(device)
@@ -428,22 +434,30 @@ def main_loc(cfg):
     print("Saving results to csv")
 
     now = time.strftime("%Y-%m-%d_%H-%M")
-    dirname = f"{cfg.setting.query}_{cfg.setting.support}_{dataset}_{now}"
-    os.makedirs("results", exist_ok=True)
-    os.chdir("results")
-    print(os.getcwd())
-    os.makedirs(dirname, exist_ok=True)
-    os.chdir(dirname)
-    print(os.getcwd())
-    for i in range(cfg.sampler.n_shots):
-        df = pd.DataFrame(accs["matching_1nn"][i], columns=["1nn"])
-        df["knn"] = accs["matching_knn"][i]
-        df["ncm_max"] = accs["ncm_max"][i]
-        df["ncm_sum"] = accs["ncm_sum"][i]
-        df.to_csv(f"{i+1}_shots.csv", index=False)
+    
+    classifiers = ["matching_1nn", "matching_knn", "ncm_max", "ncm_sum"]
+    cols = ["date", "setting", "classifier"] + [f"shot_{i+1}" for i in range(cfg.sampler.n_shots)]
 
-    with open("config.json", "w") as f:
-        json.dump(cfg, f)
+    os.makedirs("results", exist_ok=True)
+
+    try:
+        df = pd.read_csv(os.path.join("results", f"accs_{dataset}.csv"))
+        # new empty line for readability
+        df = df.append({col: "" for col in cols}, ignore_index=True)
+
+    except:
+        df = pd.DataFrame(columns=cols)
+
+    for classifier in classifiers:
+
+        new_row = {"date": now, 
+                    "setting": f"S: {cfg.setting.support}/ Q: {cfg.setting.query}",
+                    "classifier": classifier,
+                    **{f"shot_{i+1}": np.mean(accs[classifier][i]) for i in range(cfg.sampler.n_shots)}}
+        
+        df = df.append(new_row, ignore_index=True)
+    
+    df.to_csv(os.path.join("results", f"accs_{dataset}.csv"), index=False)
 
 
 def main_seed(cfg, seed): # reproduce a run with a specific seed
@@ -515,11 +529,20 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
         
     print("Accuracy: ", round(acc,2))
 
-
+def main_fast():
+    print("Running fast experiments")
+    # only the fastest experiments (no AMG or hierarchical)
+    for dataset in ["imagenetloc", "CUBloc", "pascalVOC"]:
+        for support_setting in ["whole", "filtered", "unfiltered"]:
+            for query_setting in ["whole", "filtered", "unfiltered"]:
+                cfg.setting.support = support_setting
+                cfg.setting.query = query_setting
+                cfg.dataset = dataset
+                main_loc(cfg)
                 
 if __name__ == "__main__":
     
-    print("Config:", cfg.setting)
+    
 
     """
     python main.py -t baseline -d imagenet -w
@@ -564,6 +587,9 @@ if __name__ == "__main__":
 
     elif args.type == "coco":
         main_coco(cfg)
+
+    elif args.type == "fast":
+        main_fast()
 
 
     else:
