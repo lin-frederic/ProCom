@@ -429,35 +429,39 @@ def main_loc(cfg):
                         "average_accuracy_5shot": np.mean(L_acc5)
                        })
             
+    if cfg.log:
 
+        print("Saving results to csv")
 
-    print("Saving results to csv")
-
-    now = time.strftime("%Y-%m-%d_%H-%M")
-    
-    classifiers = ["matching_1nn", "matching_knn", "ncm_max", "ncm_sum"]
-    cols = ["date", "setting", "classifier"] + [f"shot_{i+1}" for i in range(cfg.sampler.n_shots)]
-
-    os.makedirs("results", exist_ok=True)
-
-    try:
-        df = pd.read_csv(os.path.join("results", f"accs_{dataset}.csv"))
-        # new empty line for readability
-        df = df.append({col: "" for col in cols}, ignore_index=True)
-
-    except:
-        df = pd.DataFrame(columns=cols)
-
-    for classifier in classifiers:
-
-        new_row = {"date": now, 
-                    "setting": f"S: {cfg.setting.support}/ Q: {cfg.setting.query}",
-                    "classifier": classifier,
-                    **{f"shot_{i+1}": np.mean(accs[classifier][i]) for i in range(cfg.sampler.n_shots)}}
+        now = time.strftime("%Y-%m-%d_%H-%M")
         
-        df = df.append(new_row, ignore_index=True)
-    
-    df.to_csv(os.path.join("results", f"accs_{dataset}.csv"), index=False)
+        classifiers = ["matching_1nn", "matching_knn", "ncm_max", "ncm_sum"]
+        cols = ["date", "setting", "classifier"] + [f"shot_{i+1}" for i in range(cfg.sampler.n_shots)]
+
+        os.makedirs("results", exist_ok=True)
+
+        try:
+            df = pd.read_csv(os.path.join("results", f"accs_{dataset}.csv"))
+            # new empty line for readability
+            df = df.append({col: "" for col in cols}, ignore_index=True)
+
+        except:
+            df = pd.DataFrame(columns=cols)
+
+        for classifier in classifiers:
+
+            new_row = {"date": now, 
+                        "setting": f"S: {cfg.setting.support}/ Q: {cfg.setting.query}",
+                        "classifier": classifier,
+                        **{f"shot_{i+1}": np.mean(accs[classifier][i]) for i in range(cfg.sampler.n_shots)}}
+            
+            df = df.append(new_row, ignore_index=True)
+        
+        df.to_csv(os.path.join("results", f"accs_{dataset}.csv"), index=False)
+
+    else:
+        print("Not saving results to csv")
+
 
 
 def main_seed(cfg, seed): # reproduce a run with a specific seed
@@ -529,16 +533,24 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
         
     print("Accuracy: ", round(acc,2))
 
-def main_fast():
-    print("Running fast experiments")
-    # only the fastest experiments (no AMG or hierarchical)
-    for dataset in ["imagenetloc", "CUBloc", "pascalVOC"]:
-        for support_setting in ["whole", "filtered", "unfiltered"]:
-            for query_setting in ["whole", "filtered", "unfiltered"]:
-                cfg.setting.support = support_setting
-                cfg.setting.query = query_setting
-                cfg.dataset = dataset
-                main_loc(cfg)
+def main_custom():
+    print("Custom experiments")
+    
+    for dataset in ["pascalvoc","imagenetloc", "cubloc"]:
+        cfg.setting.query = "hierarchical"
+        cfg.setting.support = "filtered"
+        cfg.dataset = dataset.upper()
+        cfg.log = True
+        cfg.wandb = True    
+        cfg["type"] = "loc"
+        wandb.login()
+        wandb.init(project="clean_runs", entity="procom", notes=args.message)
+        cfg["wandb"] = True
+        wandb.config.update(cfg)
+        main_loc(cfg)
+        wandb.finish(quiet=True)
+
+    print("End of ProCom experiments")
                 
 if __name__ == "__main__":
     
@@ -588,8 +600,8 @@ if __name__ == "__main__":
     elif args.type == "coco":
         main_coco(cfg)
 
-    elif args.type == "fast":
-        main_fast()
+    elif args.type == "custom":
+        main_custom()    
 
 
     else:

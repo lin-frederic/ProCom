@@ -2,6 +2,7 @@ from box import Box
 from pprint import pprint
 
 config = {
+    "log":False,
     "setting":{
         # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
       "query": "filtered",
