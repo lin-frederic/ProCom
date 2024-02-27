@@ -541,14 +541,14 @@ def main_custom():
         cfg.setting.support = "filtered"
         cfg.dataset = dataset.upper()
         cfg.log = True
-        cfg.wandb = True    
+        #cfg.wandb = True    
         cfg["type"] = "loc"
-        wandb.login()
-        wandb.init(project="clean_runs", entity="procom", notes=args.message)
-        cfg["wandb"] = True
-        wandb.config.update(cfg)
+        #wandb.login()
+        #wandb.init(project="clean_runs", entity="procom", notes=args.message)
+        #cfg["wandb"] = True
+        #wandb.config.update(cfg)
         main_loc(cfg)
-        wandb.finish(quiet=True)
+        #wandb.finish(quiet=True)
 
     print("End of ProCom experiments")
                 
