@@ -205,7 +205,7 @@ def main(mode):
         sampler = EpisodicSampler(paths = paths,
                                 n_query= cfg.sampler.n_queries,
                                 n_ways = cfg.sampler.n_ways,
-                                n_shot = 5,)
+                                n_shot =1,)
         
         # dataset
         episode = sampler()
@@ -214,8 +214,13 @@ def main(mode):
         support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
         
     elif mode=="pascal":
+        cfg.sampler.n_shots = 1
         sampler = PascalVOCSampler(cfg)
-        support_images, _, _, _, _ = sampler()
+        seed = np.random.randint(0,1000)
+        print(seed)
+        support_images, _, _, _, _ = sampler(seed_classes = seed, seed_images = seed)
+        support_images.append("/nasbrain/datasets/VOC2012/JPEGImages/2010_000805.jpg")
+        print(support_images)
 
         
     dsm = DSM(lambda_color=1.0)
@@ -240,7 +245,7 @@ def main(mode):
         fig, axs = plt.subplots(3, eigenvectors.shape[0], figsize=(15,15))
 
         # eigenvectors        
-        kernel_s = 3 
+        """ kernel_s = 3 
 
         for i,ax in enumerate(axs[0]):
 
@@ -262,7 +267,7 @@ def main(mode):
         # thresholded eigenvectors 
         for i,ax in enumerate(axs[1]):
             
-            """kernel_s = 3
+            ""kernel_s = 3
             temp = 255 - eigenvectors[i]
             mask = cv2.adaptiveThreshold(src=temp,
                                          maxValue=255,
@@ -274,7 +279,7 @@ def main(mode):
             # conv2d 
             mask = scipy.signal.convolve2d(mask, np.ones((kernel_s+2,kernel_s+2)), mode="same")
             mask = mask > 0
-            mask = scipy.ndimage.binary_fill_holes(mask)    """
+            mask = scipy.ndimage.binary_fill_holes(mask)    ""
 
             #temp = eigenvectors[i]
             s = 5
@@ -290,7 +295,7 @@ def main(mode):
 
         # sample points on the original image
             
-        sample_points = dsm.sample_from_maps(sample_per_map=10, temperature=255*0.07)
+        sample_points = dsm.sample_from_maps(sample_per_map=5, temperature=255*0.07)
             
         for i,ax in enumerate(axs[2]):
             
@@ -300,6 +305,42 @@ def main(mode):
 
 
         plt.savefig(f"temp_dsm/eigenvectors_{image_path.split('/')[-1]}")
+        plt.close()"""
+
+        sample_points = dsm.sample_from_maps(sample_per_map=5, temperature=255*0.07)
+
+        plt.figure(figsize=(15,5))
+        plt.subplot(1,3,1)
+        plt.imshow(image)
+        plt.title("Original image")
+        plt.axis("off")
+
+        plt.subplot(1,3,2)
+        plt.imshow(image)
+        # evenly spaced points
+        w,h = image.size
+        n = 32
+
+        regular_grid = []
+
+        for i in range(n):
+            for j in range(n):
+                regular_grid.append((i*w//n,j*h//n))
+
+        plt.scatter(*zip(*regular_grid),c="red", alpha=0.7, s=2)  
+        plt.axis("off")
+        plt.title("AMG regular grid points")
+
+        plt.subplot(1,3,3)
+        plt.imshow(image)
+        colors = ["red","blue","green","yellow","purple"]
+        for i in range(len(sample_points)):
+            for point in sample_points[i]:
+                plt.scatter(point[0],point[1],c=colors[i], alpha=0.7)
+        plt.title("DSM sampled  points")
+        plt.axis("off")
+
+        plt.savefig(f"temp_dsm/Asample_points_{image_path.split('/')[-1]}", dpi=300)
         plt.close()
 
 
