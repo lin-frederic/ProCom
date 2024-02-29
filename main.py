@@ -537,7 +537,7 @@ def main_custom():
     print("Custom experiments")
     
     for dataset in ["pascalvoc","imagenetloc", "cubloc"]:
-        cfg.setting.query = "hierarchical"
+        cfg.setting.query = "AMG"
         cfg.setting.support = "filtered"
         cfg.dataset = dataset.upper()
         cfg.log = True
