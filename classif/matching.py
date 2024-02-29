@@ -126,7 +126,7 @@ class NCM(torch.nn.Module):
                  seed=-1):
         super(NCM, self).__init__()
         self.seed = seed
-        assert mode.lower() in ["sum", "max", "mean]"], "mode should be either 'sum', 'max' or 'mean'"
+        assert mode.lower() in ["sum", "max", "mean"], "mode should be either 'sum', 'max' or 'mean'"
         self.mode = mode.lower()
 
         assert isinstance(shots, int)
