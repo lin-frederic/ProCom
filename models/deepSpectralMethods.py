@@ -344,7 +344,8 @@ def main(mode):
         plt.title("DSM sampled  points")
         plt.axis("off")
 
-        plt.savefig(f"temp_dsm/Asample_points_{image_path.split('/')[-1]}", dpi=300, bbox_inches='tight')
+        plt.savefig(f"temp_dsm/Asample_points_{image_path.split('/')[-1]}.png",
+                    dpi=300, bbox_inches='tight')
         plt.close()
 
 

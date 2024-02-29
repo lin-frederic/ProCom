@@ -292,18 +292,15 @@ def main_loc(cfg):
         ])
     
     
-
-    
-    
-    matching_1nn = MatchingClassifier(mode = "1nn", shots=cfg.sampler.n_shots, seed=42)
-    matching_knn = MatchingClassifier(mode = "knn", shots=cfg.sampler.n_shots, seed=42)
     ncm_max = NCM(mode="max", shots=cfg.sampler.n_shots, seed=42)
     ncm_sum = NCM(mode="sum", shots=cfg.sampler.n_shots, seed=42)
+    ncm_mean = NCM(mode="mean", shots=cfg.sampler.n_shots, seed=42)
 
-    accs = {"matching_1nn": {i: [] for i in range(cfg.sampler.n_shots)},
-            "matching_knn": {i: [] for i in range(cfg.sampler.n_shots)},
+    accs = {
             "ncm_max": {i: [] for i in range(cfg.sampler.n_shots)},
-            "ncm_sum": {i: [] for i in range(cfg.sampler.n_shots)}}
+            "ncm_sum": {i: [] for i in range(cfg.sampler.n_shots)},
+            "ncm_mean": {i: [] for i in range(cfg.sampler.n_shots)},
+            }
     
 
     
@@ -402,26 +399,24 @@ def main_loc(cfg):
                 outputs = model(inputs).squeeze(0)
                 query_tensor[i] = outputs
 
-        accs_1nn = matching_1nn(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
-        accs_knn = matching_knn(support_tensor, query_tensor, support_labels, query_labels, use_cosine=True)
         accs_max = ncm_max(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
         accs_sum = ncm_sum(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
+        accs_mean = ncm_mean(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
 
 
         for i in range(cfg.sampler.n_shots):
-            accs["matching_1nn"][i].append(accs_1nn[i])
-            accs["matching_knn"][i].append(accs_knn[i])
             accs["ncm_max"][i].append(accs_max[i])
             accs["ncm_sum"][i].append(accs_sum[i])
+            accs["ncm_mean"][i].append(accs_mean[i])
 
-        acc1 = accs["matching_1nn"][0][-1] # last accuracy for 1 shot and 1nn
-        acc5 = accs["matching_1nn"][4][-1] # last accuracy for 5 shots and 1nn
+        acc1 = accs["ncm_max"][0][-1]
+        acc5 = accs["ncm_max"][4][-1]
 
-        L_acc1 = accs["matching_1nn"][0]
-        L_acc5 = accs["matching_1nn"][4]
+        L_acc1 = accs["ncm_max"][0]
+        L_acc5 = accs["ncm_max"][4]
 
 
-        pbar.set_description(f"Last (1nn, 1 shot): {round(acc1,2)}, avg: {round(np.mean(L_acc1),2)}")
+        pbar.set_description(f"Last (ncm, 1 shot): {round(acc1,2)}, avg: {round(np.mean(L_acc1),2)}")
         if cfg.wandb:
             wandb.log({"running_accuracy_1shot": acc1,
                         "average_accuracy_1shot": np.mean(L_acc1),
@@ -430,18 +425,20 @@ def main_loc(cfg):
                        })
             
     if cfg.log:
+        path_to_results = "results1"
 
         print("Saving results to csv")
 
         now = time.strftime("%Y-%m-%d_%H-%M")
         
-        classifiers = ["matching_1nn", "matching_knn", "ncm_max", "ncm_sum"]
-        cols = ["date", "setting", "classifier"] + [f"shot_{i+1}" for i in range(cfg.sampler.n_shots)]
+        classifiers = ["ncm_max", "ncm_sum", "ncm_mean"]
 
-        os.makedirs("results", exist_ok=True)
+        cols = ["date", "Q", "S", "classifier"] + [f"shot_{i+1}" for i in range(cfg.sampler.n_shots)]
+
+        os.makedirs(path_to_results, exist_ok=True)
 
         try:
-            df = pd.read_csv(os.path.join("results", f"accs_{dataset}.csv"))
+            df = pd.read_csv(os.path.join(path_to_results, f"accs_{dataset}.csv"))
             # new empty line for readability
             df = df.append({col: "" for col in cols}, ignore_index=True)
 
@@ -451,13 +448,14 @@ def main_loc(cfg):
         for classifier in classifiers:
 
             new_row = {"date": now, 
-                        "setting": f"S: {cfg.setting.support}/ Q: {cfg.setting.query}",
+                        "Q": cfg.setting.query,
+                        "S": cfg.setting.support,
                         "classifier": classifier,
                         **{f"shot_{i+1}": np.mean(accs[classifier][i]) for i in range(cfg.sampler.n_shots)}}
             
             df = df.append(new_row, ignore_index=True)
         
-        df.to_csv(os.path.join("results", f"accs_{dataset}.csv"), index=False)
+        df.to_csv(os.path.join(path_to_results, f"accs_{dataset}.csv"), index=False)
 
     else:
         print("Not saving results to csv")
@@ -535,21 +533,26 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
 
 def main_custom():
     print("Custom experiments")
-    
-    for dataset in ["pascalvoc","imagenetloc", "cubloc"]:
-        cfg.setting.query = "AMG"
-        cfg.setting.support = "filtered"
-        cfg.dataset = dataset.upper()
-        cfg.log = True
-        #cfg.wandb = True    
-        cfg["type"] = "loc"
-        #wandb.login()
-        #wandb.init(project="clean_runs", entity="procom", notes=args.message)
-        #cfg["wandb"] = True
-        #wandb.config.update(cfg)
-        main_loc(cfg)
-        #wandb.finish(quiet=True)
+    cfg.log = True
 
+    for dataset in ["imagenetloc", "cubloc"]:
+        for q in ["whole", "filtered"]:
+            for s in ["whole", "filtered"]:
+                cfg.setting.query = q
+                cfg.setting.support = s
+                cfg.dataset = dataset.upper()
+                cfg["type"] = "loc"
+                main_loc(cfg)
+        
+    dataset = "pascalvoc"
+    for q in ["whole", "filtered", "unfiltered"]:
+        for s in ["whole", "filtered", "unfiltered"]:
+            cfg.setting.query = q
+            cfg.setting.support = s
+            cfg.dataset = dataset.upper()
+            cfg["type"] = "loc"
+            main_loc(cfg)
+        
     print("End of ProCom experiments")
                 
 if __name__ == "__main__":

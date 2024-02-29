@@ -126,7 +126,7 @@ class NCM(torch.nn.Module):
                  seed=-1):
         super(NCM, self).__init__()
         self.seed = seed
-        assert mode.lower() in ["sum", "max"]
+        assert mode.lower() in ["sum", "max", "mean]"], "mode should be either 'sum', 'max' or 'mean'"
         self.mode = mode.lower()
 
         assert isinstance(shots, int)
@@ -202,20 +202,8 @@ class NCM(torch.nn.Module):
                 max_similarity, max_similarity_index = torch.max(similarity, dim=1)
                 class_similarity = {}
 
-                if self.mode == "sum":
-                    for i in range(len(max_similarity)):
-                        similarity_value, similarity_index = max_similarity[i], max_similarity_index[i]
-                        class_index = unique_labels[similarity_index]
-                        if class_index not in class_similarity:
-                            class_similarity[class_index] = []
-                        class_similarity[class_index].append(similarity_value)
-                    for class_index in class_similarity:
-                        class_similarity[class_index] = torch.sum(torch.stack(class_similarity[class_index]))
-                        #torch.mean(torch.stack(class_similarity[class_index]))
-                    # get the class with the maximum similarity (averaged over all crops)
-                    support_class = max(class_similarity, key=class_similarity.get)
-            
-                else: # max
+                if self.mode == "max":
+
                     class_index = 0
                     class_similarity = -float('inf')
                     for i in range(len(max_similarity)):
@@ -223,6 +211,25 @@ class NCM(torch.nn.Module):
                             class_similarity = max_similarity[i]
                             class_index = max_similarity_index[i]
                     support_class = unique_labels[class_index]
+
+                else: # sum or mean
+                    for i in range(len(max_similarity)):
+                        similarity_value, similarity_index = max_similarity[i], max_similarity_index[i]
+                        class_index = unique_labels[similarity_index]
+                        if class_index not in class_similarity:
+                            class_similarity[class_index] = []
+                        class_similarity[class_index].append(similarity_value)
+                    for class_index in class_similarity:
+                        if self.mode == "sum":
+                            class_similarity[class_index] = torch.sum(torch.stack(class_similarity[class_index]))
+                        else:
+                            class_similarity[class_index] = torch.mean(torch.stack(class_similarity[class_index]))
+
+                    # get the class with the maximum similarity (averaged over all crops)
+                    support_class = max(class_similarity, key=class_similarity.get)
+            
+
+                    
                 
 
                 if support_class == unique_query_labels_reverse[image_index]:
