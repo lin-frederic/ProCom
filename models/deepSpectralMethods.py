@@ -214,12 +214,16 @@ def main(mode):
         support_images = [image_path for classe in imagenet_sample for image_path in imagenet_sample[classe]["support"]] # default n_shot=1, n_ways=5
         
     elif mode=="pascal":
-        cfg.sampler.n_shots = 1
+        cfg.sampler.n_shots = 2
         sampler = PascalVOCSampler(cfg)
         seed = np.random.randint(0,1000)
         print(seed)
         support_images, _, _, _, _ = sampler(seed_classes = seed, seed_images = seed)
         support_images.append("/nasbrain/datasets/VOC2012/JPEGImages/2010_000805.jpg")
+        support_images.append("/nasbrain/datasets/VOC2012/JPEGImages/2011_000246.jpg")
+        support_images.append("/nasbrain/datasets/VOC2012/JPEGImages/2007_005114.jpg")
+        support_images.append("/nasbrain/datasets/VOC2012/JPEGImages/2007_007417.jpg")
+        support_images.append("/nasbrain/datasets/VOC2012/JPEGImages/2007_007432.jpg")
         print(support_images)
 
         
@@ -340,7 +344,7 @@ def main(mode):
         plt.title("DSM sampled  points")
         plt.axis("off")
 
-        plt.savefig(f"temp_dsm/Asample_points_{image_path.split('/')[-1]}", dpi=300)
+        plt.savefig(f"temp_dsm/Asample_points_{image_path.split('/')[-1]}", dpi=300, bbox_inches='tight')
         plt.close()
 
 
