@@ -535,25 +535,14 @@ def main_custom():
     print("Custom experiments")
     cfg.log = True
 
-    for dataset in ["imagenetloc", "cubloc"]:
-        for q in ["whole", "filtered"]:
-            for s in ["whole", "filtered"]:
-                cfg.setting.query = q
-                cfg.setting.support = s
-                cfg.dataset = dataset.upper()
-                cfg["type"] = "loc"
-                main_loc(cfg)
+    for dataset in ["imagenetloc", "cubloc", "pascalvoc"]:
+        cfg.setting.query = "hierarchical" # AMG or hierarchical
+        cfg.setting.support = "filtered"
+        cfg.dataset = dataset.upper()
+        cfg["type"] = "loc"
+        main_loc(cfg)
         
-    dataset = "pascalvoc"
-    for q in ["whole", "filtered", "unfiltered"]:
-        for s in ["whole", "filtered", "unfiltered"]:
-            cfg.setting.query = q
-            cfg.setting.support = s
-            cfg.dataset = dataset.upper()
-            cfg["type"] = "loc"
-            main_loc(cfg)
-        
-    print("End of ProCom experiments")
+    print("End of experiments")
                 
 if __name__ == "__main__":
     
