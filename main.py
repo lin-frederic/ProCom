@@ -536,7 +536,7 @@ def main_custom():
     cfg.log = True
 
     for dataset in ["imagenetloc", "cubloc", "pascalvoc"]:
-        cfg.setting.query = "hierarchical" # AMG or hierarchical
+        cfg.setting.query = "AMG" # AMG or hierarchical
         cfg.setting.support = "filtered"
         cfg.dataset = dataset.upper()
         cfg["type"] = "loc"
