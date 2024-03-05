@@ -196,7 +196,7 @@ class DSM_SAM():
 
         if self.display != False:
             id = "results_"
-            cv2.imwrite(self.display+f"{id}_original_cv2.png", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR))
+            cv2.imwrite(self.display+f"{id}_original_cv2.png", cv2.cvtColor(np.array(dsm_img), cv2.COLOR_RGB2BGR))
 
 
             for i, eigen_map in enumerate(eigen_maps):
@@ -218,6 +218,17 @@ class DSM_SAM():
 
         # sample points from eigen maps
         sample_points = self.dsm_model.sample_from_maps(sample_per_map=sample_per_map, temperature=temperature) # (n_eigen_maps, n_samples, 2)
+
+        if self.display != False:
+            for i, eigen_map in enumerate(eigen_maps):
+                prompts = sample_points[i]
+                temp_img = np.array(dsm_img.copy())
+                for j, prompt in enumerate(prompts):
+                    color = np.random.randint(100, 255, 3)
+                    color = tuple([int(c) for c in color])
+                    temp_img = cv2.circle(temp_img, (prompt[0], prompt[1]), 10, color, 3) 
+                cv2.imwrite(self.display+f"{id}_sampled_points_{i}_cv2.png", cv2.cvtColor(np.array(temp_img), cv2.COLOR_RGB2BGR))
+            
 
         sample_points = sample_points.reshape(-1, 2) # (n_eigen_maps * n_samples, 2)
 
@@ -411,7 +422,7 @@ def generate_figure():
     sam = get_sam_model(size="b").to("cuda")
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
 
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="temp/")
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="temp_bis/")
 
     sampler = PascalVOCSampler(cfg)
     support_images, _, _, _, _ = sampler()
@@ -425,7 +436,7 @@ def generate_figure():
 
     masks,points, resized_img = model(img,
                                 img_path,
-                                sample_per_map=1, 
+                                sample_per_map=2, 
                                 temperature=255*0.07)
     
     print("Figure saved in temp/")
