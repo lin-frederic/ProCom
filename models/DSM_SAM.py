@@ -226,7 +226,9 @@ class DSM_SAM():
                 for j, prompt in enumerate(prompts):
                     color = np.random.randint(100, 255, 3)
                     color = tuple([int(c) for c in color])
-                    temp_img = cv2.circle(temp_img, (prompt[0], prompt[1]), 10, color, 3) 
+                    temp_img = cv2.circle(temp_img, (prompt[0], prompt[1]), 14, color, -1)
+
+                    temp_img = cv2.circle(temp_img, (prompt[0], prompt[1]), 16, (0, 0, 0), 2)
                 cv2.imwrite(self.display+f"{id}_sampled_points_{i}_cv2.png", cv2.cvtColor(np.array(temp_img), cv2.COLOR_RGB2BGR))
             
 
@@ -422,7 +424,7 @@ def generate_figure():
     sam = get_sam_model(size="b").to("cuda")
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
 
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="temp_bis/")
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="results_diagram/")
 
     sampler = PascalVOCSampler(cfg)
     support_images, _, _, _, _ = sampler()
@@ -439,7 +441,7 @@ def generate_figure():
                                 sample_per_map=2, 
                                 temperature=255*0.07)
     
-    print("Figure saved in temp/")
+    print("Figure saved")
     
 
     
