@@ -1,108 +1,99 @@
-# PROCOM: Instance-wise features is all you need 🔥
-
-## Introduction 🚀
-
-The goal of this project is to be able to disambiguate the potentially misleading images to improve classification performances. Indeed, whenever the image starts to contain several objects, the classification task becomes trickier as the model has to choose between the different objects detected. Let's imagine an image of a cat sitting next to a dog, this image can be classified either with "dog" label or "cat" label, but the model doesn't know which part referred to a cat and which referred to a dog. 
-
-To remove this uncertainty, the goal is to remove the other objects in a training image and only focus on the part which contains the desired object of the class. To do so, we take a batch of images belonging to the same class and use a class-agnostic object detector to identify all the possible objects within an image. Then, between all the objects detected in the image, we have to find the object which best represents the class. To do so, we extract features from the image, like an attention mask for instance. Then a similarity method is used between those features with all the other features extracted from the other images of the batch. 
-
-The underlying hypothesis is that the batch is big enough to contain enough images without any ambiguities to correctly describe the class. The second hypothesis is that the similarity between the features of those easy images and the corresponding object of the multi-object image is maximal, and is discriminative enough compared to the similarity obtained with unrelated objects. 
-
-At the end of the process, we obtain a denoised dataset which precisely describes a class. 
-
-### Problematic: 
+# :herb: FICUS: Few-shot Image Classification with Unsupervised object Segmentation
 
 
+Official code repository for EUSIPCO 2024 paper 
+"[FICUS: Few-shot Image Classification with Unsupervised object Segmentation](https://.pdf)". 
 
-### Approach : 
+The paper is available at [https:/lien eusipco.pdf](https://.pdf).
 
-Two approaches have been proposed, the difference between those approaches relies is the agnostic object detector. One uses LOST which directly detects objects of "interest" in an image. The other approach uses SAM which computes a mask of all the elements present in images: is "segment everything". 
+[IMT Atlantique](https://www.imt-atlantique.fr/en) 
+Jonathan Lys, Frédéric Lin, Clément Beliveau, Jules Decaestecker 
+[Lab-STICC](https://www.imt-atlantique.fr/fr/recherche-innovation/communaute-scientifique/organismes-nationaux/lab-sticc)
+Yassir Bendou, Aymane Abdali,\Bastien Pasdeloup
 
-## Schemes of the two options 
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/ambv/black)
+[![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
+[![PyPI pyversions](https://img.shields.io/pypi/pyversions/ansicolortags.svg)](https://pypi.python.org/pypi/ansicolortags/)
+<CENTER>
+<img
+src="https://www.pole-emc2.fr/app/uploads/logos_adherents/91fff3f6-c993-67c6-68ae-53957c2f623d-768x522.png"
+WIDTH=200 HEIGHT=200>
+</CENTER>
 
-The first approach is using [LOST](https://arxiv.org/pdf/2109.14279.pdf)
-<img src="images/LOST_pipeline.png"/>
-The second approach is using [SAM](https://arxiv.org/pdf/2304.02643.pdf)
-<img src="images/SAM_pipeline.png"/>
+This repository contains the code for out of the box ready to use few-shot classifier for ambiguous images. In this paper we have shown that removing the ambiguity from the the query during few shot classification improves performances. To do so we use a combination of foundation models and spectral methods. 
+## Installation 🛠 
 
+### Conda venv
 
-## Instalation 🛠 : 
-
-To connect to the SSH bridge : 
+```[bash]
+   git clone https://github.com/expertailab/.git
+   cd 
+   python3 -m venv ~//venvFicus
+   source ~/venvFicus/bin/activate
+   pip install -r requirement.txt
 ```
+### Conda env 
 
-PLEASE FILL 
-
+```[bash]
+   git clone https://github.com/expertailab/.git
+   cd 
+   conda create -n Ficus python=3.9
+   conda activate Ficus
+   pip install -r requirement.txt
 ```
+## Pipeline 
 
-If you don't have conda please install it [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
-To install the correct dependencies and set up the environment with conda 
 
+
+## Get started 🚀
+
+### Dataset 
+
+For all our experiments we have used three datasets  : ImageNet , Pascal Voc and Cub
+### Models 
+
+We use two foundation model : `dinov2_vit{s-b-l-g}14` for image embdedding and classification and [Segment Anything ](https://github.com/facebookresearch/segment-anything) for image segmentation.
+
+### Run inference
+
+- To run the evaluations  
+```[bash]
+sh run.sh -dataset "cub"
 ```
-conda env create -f environment.yml
-conda actiavate ProCom
-
-```
-
-
-## Gantt Chart 🗓️
-
-
-```mermaid
-gantt
-
-dateFormat  YYYY-MM-DD
-title PROCOM
-
-section Development
-Environment setup         :active,  des1, 2023-10-05, 21d
-Dataset collect/process   :active,  des2, 2023-10-05, 21d
-Model instalation         :done,    des3, 2023-10-05, 7d
-Baseline implementation   :  des14, 2023-10-19, 7d
-Pipeline design     :  des15, 2023-10-19, 7d
-Models Block implem :  des16, 2023-10-26, 7d
-Mask Embedding implem :  des16, 2023-11-02, 15d
-Classification Block implem :  des16, 2023-11-11, 10d
-
-section Research
-State of Art collect      :active,  des4, 2023-09-29, 50d
-Benchmark collect         :active,  des5, 2023-09-29, 50d
-
-
-section Writing 
-Abstract : des17, 2023-11-06, 7d
-Introduction : des18, 2023-11-16, 30d
-Related Work : des19, 2023-11-16, 30d
-Experiement - Dataset : des20, 2023-11-26, 7d
-Experiement - Model : des21, 2023-11-26, 7d
-
-
-section School Project Review
-Team organisation        : done, des6, 2023-09-29, 10d        
-Subject reformulation    : active, des11, 2023-09-29, 21d
-Project planning         : active, des12, 2023-09-29, 7d
-Risk evaluation          :        des13, 2023-10-12, 7d
-Project Review           : milestone, des31, 2023-11-21, 0d
-
+- To run deep spectral method on un image
+```[bash]
 
 ```
 
+Expected result : 
+<CENTER>
+<img
+src="https://https://github.com/NewS0ul/ProCom/blob/main/images/figs/Asample_points_2010_000805.jpg.png"
+WIDTH=200 HEIGHT=200>
+</CENTER>
 
-## KIKIMETER 📈
+- To run prompted sam on an image
+```[bash]
 
-<!-- BEGIN MERMAID -->
-    
-```mermaid
-pie
-title Number of line of codes per user
-"Fred" : 100
-"Jules" : 100
-"Jonathan" : 100
-"Clément" : 0
 ```
 
-<!-- END MERMAID -->
+Expected result : 
+<CENTER>
+<img
+src="https://https://github.com/NewS0ul/ProCom/blob/main/images/figs/Asample_points_2010_000805.jpg.png"
+WIDTH=200 HEIGHT=200>
+</CENTER>
+
+- To run ficus on an image 
+```[bash]
+
+```
 
 
-<img src="https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExZnJwaG1va2ZhOTU4ZnA5b3F1dDdmMTVjcWZ3azBnanpwa3Izamo1dyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/BBkKEBJkmFbTG/giphy.gif" width = "100%">
+## Citation
 
+If you find our paper or code repository helpful, please consider citing as follows:
+
+```
+bibtex
+```
