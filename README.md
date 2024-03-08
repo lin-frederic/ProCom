@@ -83,7 +83,7 @@ WIDTH=80%>
 
 <CENTER>
 <img
-src="/Users/jonathanlys/code/ProCom/images/figs/Asample_points_2011_000246.jpg.png"
+src="images/figs/Asample_points_2011_000246.jpg.png"
 WIDTH=80%>
 </CENTER>
 
