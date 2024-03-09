@@ -535,9 +535,9 @@ def main_custom():
     print("Custom experiments")
     cfg.log = True
 
-    for dataset in ["imagenetloc", "cubloc", "pascalvoc"]:
-        cfg.setting.query = "AMG" # AMG or hierarchical
-        cfg.setting.support = "filtered"
+    for dataset in ["imagenetloc"]:  #["cubloc", "pascalvoc", "imagenetloc"]
+        cfg.setting.query = "hierarchical"
+        cfg.setting.support = "whole"
         cfg.dataset = dataset.upper()
         cfg["type"] = "loc"
         main_loc(cfg)
