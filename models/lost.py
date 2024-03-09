@@ -13,7 +13,7 @@ from scipy.signal import convolve2d as convolve
 from tqdm import tqdm
 import argparse
 
-from tools import unravel_index # don't change to utils, there is a utils.py elsewhere
+from tools import unravel_index
 
 class Lost(nn.Module):
     def __init__(self, model, alpha, k = 100):
@@ -117,10 +117,12 @@ def main(n, is_grid, seed):
     up = 2 # upscaling factor
     k = k*up**2 # logical to keep the same ratio patches/seed expansion set
     lost = Lost(model, alpha=0., k=k)
+
+    from config import cfg
     
     for index in tqdm(range(n)):
     
-        root = "/nasbrain/datasets/imagenet/images/val/"
+        root = cfg.paths.imagenet
         folder = np.random.choice(os.listdir(root))
         path = os.path.join(root,folder)
         

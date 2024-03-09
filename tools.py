@@ -10,7 +10,7 @@ def unravel_index(
     indices: torch.LongTensor,
     shape: Tuple[int, ...],
 ) -> torch.LongTensor:
-    r"""Converts flat indices into unraveled coordinates in a target shape.
+    """Converts flat indices into unraveled coordinates in a target shape.
 
     This is a `torch` implementation of `numpy.unravel_index`.
 

@@ -3,9 +3,7 @@ import random as rd
 from typing import Any
 from config import cfg
 import json
-from PIL import Image
 import xml.etree.ElementTree as ET
-from tqdm import tqdm
 class FolderExplorer():
     def __init__(self, dataset_paths) -> None:
         self.dataset_paths = dataset_paths

@@ -23,7 +23,9 @@ from dataset import PascalVOCSampler
 
 from scipy.ndimage import center_of_mass # find the baricenter of the image
 
-def knn_affinity(image, n_neighbors=[20, 10], distance_weights=[2.0, 0.1]): # magie noire
+# adapted from https://github.com/lukemelas/deep-spectral-segmentation
+
+def knn_affinity(image, n_neighbors=[20, 10], distance_weights=[2.0, 0.1]): 
     """Computes a KNN-based affinity matrix. Note that this function requires pymatting"""
     try:
         from pymatting.util.kdtree import knn
@@ -185,7 +187,6 @@ class DSM(nn.Module):
     
         
 def softmax_2d(x, temperature=1.0):
-    """Compute the softmax of matrix x in a numerically stable way."""
     temp = x.reshape(-1) / temperature
     temp = temp - np.max(temp) # shift to avoid overflow
     exp_x = np.exp(temp) 
@@ -224,9 +225,6 @@ def main(mode):
     dsm.to(device)
 
 
-    #support_images.append("images/manchot_banane_small.png")
-
-
     for image_path in tqdm(support_images):
         image = Image.open(image_path).convert("RGB")
         image = ResizeModulo(patch_size=16, target_size=224*2, tensor_out=False)(image)
@@ -262,20 +260,6 @@ def main(mode):
         # thresholded eigenvectors 
         for i,ax in enumerate(axs[1]):
             
-            """kernel_s = 3
-            temp = 255 - eigenvectors[i]
-            mask = cv2.adaptiveThreshold(src=temp,
-                                         maxValue=255,
-                                            adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                            thresholdType=cv2.THRESH_BINARY,
-                                            blockSize=kernel_s,
-                                            C=2)
-            mask = 255 - mask
-            # conv2d 
-            mask = scipy.signal.convolve2d(mask, np.ones((kernel_s+2,kernel_s+2)), mode="same")
-            mask = mask > 0
-            mask = scipy.ndimage.binary_fill_holes(mask)    """
-
             #temp = eigenvectors[i]
             s = 5
             temp = scipy.signal.convolve2d(eigenvectors[i], np.ones((s,s)), mode="same")

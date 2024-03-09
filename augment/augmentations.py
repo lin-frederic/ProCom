@@ -6,7 +6,6 @@ from PIL import Image
 def remove_bg (image , mask):
     image_masked = image.copy()
     image_masked[mask == False] = [0, 0, 0]  # Set the BGR color to [0, 0, 0] for black
-    #image_masked = cv2.cvtColor(image_masked, cv2.COLOR_BGR2RGB)
     return image_masked
 
 # crop

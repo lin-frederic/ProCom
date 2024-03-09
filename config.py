@@ -3,7 +3,7 @@ from pprint import pprint
 
 config = {
     "setting":{
-        # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
+    # can be any of ["whole", "AMG", "hierarchical", "filtered", "unfiltered"]
       "query": "hierarchical",
       "support": "filtered",
     },
@@ -11,17 +11,10 @@ config = {
     "k_matching" : "1NN", # "1NN" or "KNN"
     "wandb" : False,
     "paths" : {
-        "imagenet" : "/nasbrain/datasets/imagenet/images/val",
-        "imagenetloc" : "/nasbrain/datasets/imagenetloc/",
-        "cub" : "/nasbrain/datasets/CUB_200_2011",
-        "caltech" : "/nasbrain/datasets/caltech-101",
-        "food" : "/nasbrain/datasets/food-101",
-        "cifarfs" : "/nasbrain/datasets/cifar_fs",
-        "fungi" : "/nasbrain/datasets/fungi",
-        "flowers" : "/nasbrain/datasets/oxford_flowers",
-        "pets" : "/nasbrain/datasets/oxford_pets",
-        "coco" : "/nasbrain/datasets/coco_full",
-        "pascalVOC" : "/nasbrain/datasets/VOC2012"
+        "imagenet" : "path/to/imagenet",
+        "imagenetloc" : "path/to/imagenet_loc",
+        "cub" : "path/to/cub",
+        "pascalVOC" : "path/to/pascalVOC",
     },
     "sampler" : {
         "n_ways" : 5,
@@ -34,7 +27,7 @@ config = {
     "n_runs" : 100,
 
     "top_k_masks": 2, # top k masks used for each method
-    "sam_cache" : "/nasbrain/f21lin/PROCOM/cache", # path of imgs for which masks have been computed,
+    "sam_cache" : "path/to/sam_cache", # path of imgs for which masks have been computed,
     "dataset": "not_specified",
 
     "dsm": {
@@ -49,7 +42,9 @@ config = {
         "temperature":255*0.1 # the maps are normalized to [0,1] and then multiplied by temperature
     },
 
-    "dezoom" : 0.2 # dezoom factor for the crop of the image
+    "dezoom" : 0.2, # dezoom factor for the crop of the image
+
+    "sam":"path/to/sam", # path to the SAM model
 }
 
 cfg = Box(config)

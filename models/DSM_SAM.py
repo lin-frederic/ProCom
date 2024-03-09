@@ -24,7 +24,7 @@ from PIL import Image
 import cv2
 
 from config import cfg
-from dataset import DatasetBuilder, PascalVOCSampler
+from dataset import PascalVOCSampler
 
 import matplotlib.pyplot as plt
 import numpy as np 
@@ -275,14 +275,6 @@ def main(all_in_one=False, mode="pascal"):
     
     model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2)
 
-    """dataset = DatasetBuilder(cfg=cfg,)
-
-    seed = np.random.randint(0, 1000) # 0 # 42 #
-    seed = 17
-
-    print(f"Seed: {seed}")
-    support_images, support_labels, query_images, query_labels = dataset(seed_classes=seed, seed_images=seed)["caltech"]"""
-
     if mode == "pascal":
         cfg.sampler.n_ways = 20
         sampler = PascalVOCSampler(cfg)
@@ -290,21 +282,18 @@ def main(all_in_one=False, mode="pascal"):
 
     else:
         type_ = "val"
-        path = f"/nasbrain/datasets/LVIS/{type_}2017"
+        path = cfg.paths.pascalVOC+type_
         limit = 20
 
         support_images = [os.path.join(path, f) for f in os.listdir(path)]
 
         seed = np.random.randint(0, 1000) # 0 # 42 #
-        #seed = 489
         
         print(f"Seed: {seed}")
 
         np.random.seed(seed)
         support_images = np.random.choice(support_images, limit)
         support_images = list(support_images)
-
-    #support_images +=["images/manchot_banane_small.png"]
 
     start = time.time()
 

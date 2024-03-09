@@ -26,9 +26,8 @@ from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 from models.deepSpectralMethods import DSM
 
 from tools import iou, focal_loss, dice_loss
-from typing import Union
 
-import math
+from config import cfg
 
 
 
@@ -104,7 +103,7 @@ class SAM(nn.Module):
             "h" : "sam_vit_h_4b8939.pth",
         }
 
-        sam = sam_model_registry[f"vit_{size}"](checkpoint=f"/nasbrain/f21lin/{sizes[size]}")
+        sam = sam_model_registry[f"vit_{size}"](checkpoint=cfg.sam+sizes[size])
         print("SAM loaded")
         sam.to("cuda")
 

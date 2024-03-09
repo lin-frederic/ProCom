@@ -1,11 +1,8 @@
 import augmentations as emb
 
 from torchvision import transforms as T
-import cv2
 from PIL import Image
 from typing import Dict, List
-import os
-import numpy as np
 import json
 
 class mask2embedings():

@@ -11,6 +11,8 @@ from segment_anything import sam_model_registry, SamPredictor
 import json
 import os
 
+from config import cfg
+
 load_refs = {
     "s":"dinov2_vits14",
     "b":"dinov2_vitb14",
@@ -50,6 +52,7 @@ def forward_dino_v1(model, x):
 
 # for dinov2, pass the is_training = True flag
 
+# reimplementation of the SAM predictor to allow caching of the embeddings
 class CachedSamPredictor(SamPredictor):
     def __init__(self,
                  path_to_cache: str,
@@ -174,7 +177,7 @@ def get_sam_model(size="b"):
 
     print(f"Loading SAM model for size {size}")
 
-    sam = sam_model_registry[f"vit_{size}"](checkpoint=f"/nasbrain/f21lin/{sizes[size]}")
+    sam = sam_model_registry[f"vit_{size}"](checkpoint=f"{cfg.sam}/{sizes[size]}")
     return sam
     
 def main():

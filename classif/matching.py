@@ -216,31 +216,7 @@ def test():
     query_labels = [(i//(20*3), i//3) for i in range(20*5*3)]
     acc = ncm(support_features, query_features, support_labels, query_labels)
     print(acc)
-def test2():
-    # Test NCM
-    ncm = NCM()
-    support_features = torch.randn(5*2*3, 10)
-    query_features = torch.randn(15*5*3, 10)
-    support_labels = [(i//(2*3), i//3) for i in range(5*2*3)]
-    query_labels = [(i//(15*3), i//3) for i in range(15*5*3)]
-    support_augmented_imgs = [torch.randn(1,3, 224, 224) for i in range(5*2*3)]
-    query_augmented_imgs = [torch.randn(1,3, 224, 224) for i in range(15*5*3)]
-    support_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in support_augmented_imgs]
-    query_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in query_augmented_imgs]
-    to_display = (support_augmented_imgs, query_augmented_imgs)
-    acc = ncm(support_features, query_features, support_labels, query_labels, to_display=to_display)
-    print(acc)
-def test3():
-    ncm = NCM()
-    support_features = torch.randn(5*20*3, 10)
-    query_features = torch.randn(15*5*3, 10)
-    support_labels = [(i//(20*3), i//3) for i in range(5*20*3)]
-    query_labels = [(i//(15*3), i//3) for i in range(15*5*3)]
-    support_augmented_imgs = [torch.randn(1,3, 224, 224) for i in range(5*20*3)]
-    query_augmented_imgs = [torch.randn(1,3, 224, 224) for i in range(15*5*3)]
-    support_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in support_augmented_imgs]
-    query_augmented_imgs = [img.squeeze(0).permute(1,2,0).cpu().numpy() for img in query_augmented_imgs]
-    similarity = ncm(support_features, query_features, support_labels, query_labels,calculate_accuracy=False,use_cosine=True)
+
     
 if __name__ == '__main__':
     test()
