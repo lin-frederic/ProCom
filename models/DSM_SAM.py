@@ -203,6 +203,12 @@ class DSM_SAM():
                 # save eigen maps with colormap : viridis
                 cv2.imwrite(self.display+f"{id}_eigen_map_{i}_cv2.png", 
                             cv2.applyColorMap(eigen_map, cv2.COLORMAP_VIRIDIS))
+                
+            sum_eigen_maps = np.mean(eigen_maps, axis=0)
+            sum_eigen_maps = ((sum_eigen_maps - sum_eigen_maps.min()) / (sum_eigen_maps.max() - sum_eigen_maps.min()) * 255).astype(np.uint8)
+            
+            cv2.imwrite(self.display+f"{id}_sum_eigen_maps_cv2.png", 
+                        cv2.applyColorMap(sum_eigen_maps, cv2.COLORMAP_VIRIDIS))
 
         # compute embeddings for the resized image
         if use_cache:
@@ -418,13 +424,13 @@ def main(all_in_one=False, mode="pascal"):
 
 
 def generate_figure():
-    dsm_model = DSM(n_eigenvectors=2,lambda_color=1)
+    dsm_model = DSM(n_eigenvectors=4,lambda_color=1)
     dsm_model.to("cuda")
 
     sam = get_sam_model(size="b").to("cuda")
     sam_model = CachedSamPredictor(sam_model = sam, path_to_cache="temp/sam_cache", json_cache="temp/sam_cache.json")
 
-    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="results_diagram/")
+    model = DSM_SAM(dsm_model, sam_model, nms_thr=0.1, area_thr=0.01, target_size=224*2, display="temp/")
 
     sampler = PascalVOCSampler(cfg)
     support_images, _, _, _, _ = sampler()
@@ -432,21 +438,43 @@ def generate_figure():
     img_path = support_images[0]
 
     img_path = "images/fruit_book.jpeg"
+    #img_path = "/nasbrain/datasets/VOC2012/JPEGImages/2010_000805.jpg"
 
     print(f"Image: {img_path}")
     img = Image.open(img_path).convert("RGB")
 
     masks,points, resized_img = model(img,
                                 img_path,
-                                sample_per_map=2, 
+                                sample_per_map=3, 
                                 temperature=255*0.07)
+    
+    
+    plt.figure(figsize=(10, 5), dpi=300)
+
+    img_mask = np.zeros(masks[0].shape + (4,))
+    img_mask[..., 3] = 0
+
+    # order masks by area
+    areas = torch.stack([mask.sum() for mask in masks]) 
+    sorted_idx = torch.argsort(areas, descending=True)
+    masks = [masks[i] for i in sorted_idx]
+    points = [points[i] for i in sorted_idx]
+
+    for mask, point in zip(masks, points):
+        mask = mask.detach().cpu().numpy()
+        m = mask
+        color_mask = np.concatenate([np.random.random(3), [0.85]])
+        img_mask[m] = color_mask
+        plt.scatter(point[0,0].cpu(), point[0,1].cpu(), c="r", s=10)
+
+    plt.imshow(resized_img)
+    plt.imshow(img_mask)
+    plt.axis("off")
+            
+    plt.savefig(f'temp/final_figure.png')
     
     print("Figure saved")
     
-
-    
-    
-
 
 
 if __name__ == "__main__":

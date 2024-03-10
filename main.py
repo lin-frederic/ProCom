@@ -293,13 +293,9 @@ def main_loc(cfg):
     
     
     ncm_max = NCM(mode="max", shots=cfg.sampler.n_shots, seed=42)
-    ncm_sum = NCM(mode="sum", shots=cfg.sampler.n_shots, seed=42)
-    ncm_mean = NCM(mode="mean", shots=cfg.sampler.n_shots, seed=42)
 
     accs = {
             "ncm_max": {i: [] for i in range(cfg.sampler.n_shots)},
-            "ncm_sum": {i: [] for i in range(cfg.sampler.n_shots)},
-            "ncm_mean": {i: [] for i in range(cfg.sampler.n_shots)},
             }
     
 
@@ -400,14 +396,11 @@ def main_loc(cfg):
                 query_tensor[i] = outputs
 
         accs_max = ncm_max(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
-        accs_sum = ncm_sum(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
-        accs_mean = ncm_mean(support_tensor, query_tensor, support_labels, query_labels, use_cosine=False)
 
 
         for i in range(cfg.sampler.n_shots):
             accs["ncm_max"][i].append(accs_max[i])
-            accs["ncm_sum"][i].append(accs_sum[i])
-            accs["ncm_mean"][i].append(accs_mean[i])
+
 
         acc1 = accs["ncm_max"][0][-1]
         acc5 = accs["ncm_max"][4][-1]
@@ -425,38 +418,29 @@ def main_loc(cfg):
                        })
             
     if cfg.log:
-        path_to_results = "results1"
+        path_to_results = "results_all"
 
         print("Saving results to csv")
 
-        now = time.strftime("%Y-%m-%d_%H-%M")
+        now = time.strftime("%Y-%m-%d_%H-%M") 
         
-        classifiers = ["ncm_max", "ncm_sum", "ncm_mean"]
-
-        cols = ["date", "Q", "S", "classifier"] + [f"shot_{i+1}" for i in range(cfg.sampler.n_shots)]
-
-        os.makedirs(path_to_results, exist_ok=True)
-
-        try:
-            df = pd.read_csv(os.path.join(path_to_results, f"accs_{dataset}.csv"))
-            # new empty line for readability
-            df = df.append({col: "" for col in cols}, ignore_index=True)
-
-        except:
-            df = pd.DataFrame(columns=cols)
-
-        for classifier in classifiers:
-
-            new_row = {"date": now, 
-                        "Q": cfg.setting.query,
-                        "S": cfg.setting.support,
-                        "classifier": classifier,
-                        **{f"shot_{i+1}": np.mean(accs[classifier][i]) for i in range(cfg.sampler.n_shots)}}
-            
-            df = df.append(new_row, ignore_index=True)
         
-        df.to_csv(os.path.join(path_to_results, f"accs_{dataset}.csv"), index=False)
 
+        cols = [f"{i+1}_shot" for i in range(cfg.sampler.n_shots)]
+
+        os.makedirs(
+            os.path.join(path_to_results, dataset),
+            exist_ok=True
+            )
+        
+        
+        filename = os.path.join(path_to_results, dataset, f"{cfg.setting.query}_{cfg.setting.support}_{now}.csv")
+        df = pd.DataFrame.from_dict(accs["ncm_max"])
+        df.columns = cols
+        df.to_csv(filename, index=False)
+        
+        print(f"Results saved to {filename}")
+        
     else:
         print("Not saving results to csv")
 
@@ -535,12 +519,14 @@ def main_custom():
     print("Custom experiments")
     cfg.log = True
 
-    for dataset in ["imagenetloc"]:  #["cubloc", "pascalvoc", "imagenetloc"]
-        cfg.setting.query = "hierarchical"
-        cfg.setting.support = "whole"
-        cfg.dataset = dataset.upper()
-        cfg["type"] = "loc"
-        main_loc(cfg)
+    for dataset in ["cubloc", "pascalvoc", "imagenetloc"]:
+        for q_s in ["whole", "filtered", "AMG", "hierarchical"]:
+            cfg.setting.query = q_s
+
+            cfg.setting.support = "filtered"
+            cfg.dataset = dataset.upper()
+            cfg["type"] = "loc"
+            main_loc(cfg)
         
     print("End of experiments")
                 
