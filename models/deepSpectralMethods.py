@@ -234,6 +234,7 @@ def main(mode):
 
 
     #support_images.append("images/manchot_banane_small.png")
+    support_images = ["/nasbrain/j21lys/ProCom/images/fruit_book.jpeg"]
 
 
     for image_path in tqdm(support_images):

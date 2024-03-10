@@ -20,6 +20,8 @@ load_refs = {
 
 repo_ref = "facebookresearch/dinov2"
 
+from tools import ResizeModulo
+
 
 def get_model(size="s",use_v2=False):
     if use_v2:
@@ -180,10 +182,10 @@ def get_sam_model(size="b"):
 def main():
     model = get_model(size="s",use_v2=False)
     
-    img = Image.open("temp/img_8.png")
+    img = Image.open("images/fruit_book.jpeg")
     
     img = T.Compose([
-        T.Resize((224,224)),
+        ResizeModulo(target_size=224*2),
         T.ToTensor(),
         T.Normalize(mean=[0.485, 0.456, 0.406], 
                     std=[0.229, 0.224, 0.225])
@@ -198,9 +200,13 @@ def main():
         
     array_map = torch.min(attn_map, dim=1)[0].squeeze().detach().cpu().numpy() 
     # min returns (values, indices)
-    array_map = cv2.resize(array_map, (224,224))
+    array_map = cv2.resize(array_map, (img.shape[3]*16, img.shape[2]*16))
     array_map = (array_map - array_map.min()) / (array_map.max() - array_map.min())
     array_map = (255*array_map).astype(np.uint8)
+    
+    plt.imshow(array_map, cmap="viridis")
+    plt.axis("off")
+    plt.savefig("temp/attention.png")
     
     _, array_map = cv2.threshold(array_map, 100, 255, cv2.THRESH_OTSU+cv2.THRESH_BINARY)
     
