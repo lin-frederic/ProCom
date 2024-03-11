@@ -243,7 +243,7 @@ def main_coco(cfg):
     print("Average accuracy: ", round(np.mean(L_acc),2), "std: ", round(np.std(L_acc),2))
     print("All accuracies: ", np.round(L_acc,2))
 
-def main_loc(cfg):
+def main_loc(cfg, offset=0):
 
     print("Config:", cfg.setting)
 
@@ -304,7 +304,8 @@ def main_loc(cfg):
     
     for episode_idx in pbar:
         
-        support_images, temp_support_labels, query_images, temp_query_labels, annotations = sampler(seed_classes=episode_idx, seed_images=episode_idx)
+        support_images, temp_support_labels, query_images, temp_query_labels, annotations = sampler(seed_classes=episode_idx+offset, 
+                                                                                                    seed_images=episode_idx+offset)
         filtered_annotations = sampler.filter_annotations(annotations, filter=True)
         unfiltered_annotations = sampler.filter_annotations(annotations, filter=False)
         
@@ -518,15 +519,17 @@ def main_seed(cfg, seed): # reproduce a run with a specific seed
 def main_custom():
     print("Custom experiments")
     cfg.log = True
-
-    for dataset in ["cubloc", "pascalvoc", "imagenetloc"]:
-        for q_s in ["whole", "filtered", "AMG", "hierarchical"]:
-            cfg.setting.query = q_s
-
-            cfg.setting.support = "filtered"
-            cfg.dataset = dataset.upper()
-            cfg["type"] = "loc"
-            main_loc(cfg)
+    cfg.n_runs = 100    
+    range_offset = [100, 200, 300]
+    
+    for offset in range_offset:
+        for dataset in ["cubloc", "pascalvoc", "imagenetloc"]:
+            for q_s in ["hierarchical","AMG",  "whole", "filtered"]:
+                cfg.setting.query = q_s
+                cfg.setting.support = "filtered"
+                cfg.dataset = dataset.upper()
+                cfg["type"] = "loc"
+                main_loc(cfg, offset=offset)
         
     print("End of experiments")
                 
