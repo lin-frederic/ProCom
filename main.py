@@ -520,13 +520,13 @@ def main_custom():
     print("Custom experiments")
     cfg.log = True
     cfg.n_runs = 100    
-    range_offset = [500]
+    range_offset = [600]
     
     for offset in range_offset:
         for dataset in ["cubloc", "pascalvoc", "imagenetloc"]:
             for q_s in ["hierarchical","AMG",  "whole", "filtered"]:
                 cfg.setting.query = q_s
-                cfg.setting.support = "whole"
+                cfg.setting.support = "filtered"
                 cfg.dataset = dataset.upper()
                 cfg["type"] = "loc"
                 main_loc(cfg, offset=offset)
