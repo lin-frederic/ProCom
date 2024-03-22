@@ -479,5 +479,5 @@ def generate_figure():
 
 if __name__ == "__main__":
     #main(all_in_one=True, mode="pascal")
-    generate_figure()
+    main(all_in_one=True, mode="pascal")
     print("Done!")

@@ -4,7 +4,7 @@ __pycache__/
 test.ipynb
 *.ipynb
 .ipynb_checkpoints/
-temp/
+#temp/
 temp_dsm/
 
 wandb/
